@@ -105,6 +105,69 @@ def mnli_examples(split: str, n: int, rng: random.Random) -> list[dict]:
     return pos + neg
 
 
+# ------------------------------------------------------------------ held-out test sets
+# Datasets never used for training or calibration, to measure generalisation.
+
+MUSIQUE = ("bdsaglam/musique", "musique_ans_v1.0_dev.jsonl")  # CC BY 4.0
+VITAMINC = ("tals/vitaminc", "test.jsonl")  # CC BY-SA 3.0
+
+
+def musique_examples(n: int, rng: random.Random, seed: int = 0) -> list[dict]:
+    """Relevance (all hop counts) and sufficiency (2-hop only) from MuSiQue dev.
+
+    Same labelling rules as HotpotQA. Sufficiency uses 2-hop questions so the state has
+    three passages, like the training data, and fits in 512 tokens.
+    """
+    ds = load_dataset(MUSIQUE[0], data_files={"dev": MUSIQUE[1]}, split="dev")
+    ds = ds.shuffle(seed=seed).select(range(min(n, len(ds))))
+    out = []
+    for row in ds:
+        q = row["question"]
+        answers = [a.strip().lower() for a in [row["answer"], *row["answer_aliases"]] if a.strip()]
+        paras = {p["idx"]: (p["title"], p["paragraph_text"].strip()) for p in row["paragraphs"]}
+        gold = [p["idx"] for p in row["paragraphs"] if p["is_supporting"]]
+        distract = [p["idx"] for p in row["paragraphs"] if not p["is_supporting"]]
+        if len(gold) < 2 or len(distract) < 3:
+            continue
+
+        for i in gold:
+            has_answer = any(a in paras[i][1].lower() for a in answers)
+            out.append(_example("relevance", 2 if has_answer else 1,
+                                f"{paras[i][0]}: {paras[i][1]}", "musique", query=q))
+        for i in rng.sample(distract, 2):
+            out.append(_example("relevance", 0, f"{paras[i][0]}: {paras[i][1]}", "musique",
+                                query=q))
+
+        if len(gold) == 2:
+            d1, d2 = rng.sample(distract, 2)
+            for idxs, label in (([gold[0], gold[1], d1], 0), ([rng.choice(gold), d1, d2], 1)):
+                rng.shuffle(idxs)
+                state = format_passages([paras[i] for i in idxs])
+                out.append(_example("sufficient", label, state, "musique", query=q))
+    return out
+
+
+def vitaminc_examples(n: int, rng: random.Random, seed: int = 0) -> list[dict]:
+    """Groundedness from VitaminC test: SUPPORTS -> yes; REFUTES / NOT ENOUGH INFO -> no."""
+    ds = load_dataset(VITAMINC[0], data_files={"test": VITAMINC[1]}, split="test").shuffle(seed=seed)
+    pos, neg = [], []
+    for row in ds:
+        supported = row["label"] == "SUPPORTS"
+        bucket = pos if supported else neg
+        if len(bucket) < n // 2:
+            bucket.append(_example("grounded", 0 if supported else 1, row["evidence"],
+                                   "vitaminc", claim=row["claim"]))
+        if len(pos) >= n // 2 and len(neg) >= n // 2:
+            break
+    return pos + neg
+
+
+def build_heldout(sizes: dict, seed: int = 0) -> list[dict]:
+    rng = random.Random(seed)
+    return (musique_examples(sizes["musique"], rng, seed)
+            + vitaminc_examples(sizes["vitaminc"], rng, seed))
+
+
 def build_all(sizes: dict, seed: int = 0) -> dict[str, list[dict]]:
     """Return {"train", "calib", "test"} example lists.
 

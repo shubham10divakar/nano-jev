@@ -13,7 +13,7 @@ requires-python = ">=3.10"
 authors = [{ name = "Subham" }]
 keywords = ["rag", "retrieval", "reranker", "calibration", "llm", "decision-model", "jev"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
@@ -32,7 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Only needed to rebuild the data, train, evaluate or run baselines (scripts/ in the repo).
-train = ["datasets>=3.0", "scikit-learn", "accelerate", "numpy", "tqdm"]
+train = ["datasets>=3.0", "scikit-learn", "accelerate", "numpy", "tqdm", "matplotlib"]
 test = ["pytest>=8"]
 
 [project.scripts]
@@ -55,7 +55,7 @@ core-metadata-version = "2.4"
 [tool.hatch.build.targets.sdist]
 core-metadata-version = "2.4"
 # Keep the source distribution small: no data/, results/ or training runs.
-include = ["nanojev", "tests", "README.md", "LICENSE", "pyproject.toml"]
+include = ["nanojev", "tests", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

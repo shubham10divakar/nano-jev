@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_REPO = "sdmlai/nano-jev"
-DEFAULT_VERSION = "v0.1"  # pinned per package release, so results stay reproducible
+DEFAULT_VERSION = "v1.0"  # pinned per package release, so results stay reproducible
 
 _VERSION_RE = re.compile(r"^v\d+(\.\d+)*$")
 

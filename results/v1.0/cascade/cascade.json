@@ -1,0 +1,174 @@
+{
+  "grounded@calib": {
+    "chosen_threshold": 0.8,
+    "rows": [
+      {
+        "threshold": 0.0,
+        "escalated": 0.0,
+        "accuracy": 0.843999981880188
+      },
+      {
+        "threshold": 0.6,
+        "escalated": 0.10000000149011612,
+        "accuracy": 0.8519999980926514
+      },
+      {
+        "threshold": 0.7,
+        "escalated": 0.1899999976158142,
+        "accuracy": 0.8619999885559082
+      },
+      {
+        "threshold": 0.8,
+        "escalated": 0.28999999165534973,
+        "accuracy": 0.8679999709129333
+      },
+      {
+        "threshold": 0.85,
+        "escalated": 0.3720000088214874,
+        "accuracy": 0.8659999966621399
+      },
+      {
+        "threshold": 0.9,
+        "escalated": 0.5180000066757202,
+        "accuracy": 0.8420000076293945
+      },
+      {
+        "threshold": 0.95,
+        "escalated": 0.7799999713897705,
+        "accuracy": 0.8339999914169312
+      },
+      {
+        "threshold": 0.99,
+        "escalated": 1.0,
+        "accuracy": 0.8180000185966492
+      },
+      {
+        "threshold": 1.01,
+        "escalated": 1.0,
+        "accuracy": 0.8180000185966492
+      }
+    ]
+  },
+  "grounded@data": {
+    "chosen_threshold": 0.8,
+    "rows": [
+      {
+        "threshold": 0.0,
+        "escalated": 0.0,
+        "accuracy": 0.843999981880188,
+        "ms_per_decision": 0.9541850090026855
+      },
+      {
+        "threshold": 0.6,
+        "escalated": 0.07000000029802322,
+        "accuracy": 0.8619999885559082,
+        "ms_per_decision": 4.477509623269203
+      },
+      {
+        "threshold": 0.7,
+        "escalated": 0.13600000739097595,
+        "accuracy": 0.8619999885559082,
+        "ms_per_decision": 7.79950174530255
+      },
+      {
+        "threshold": 0.8,
+        "escalated": 0.25600001215934753,
+        "accuracy": 0.8679999709129333,
+        "ms_per_decision": 13.839487012623223
+      },
+      {
+        "threshold": 0.85,
+        "escalated": 0.335999995470047,
+        "accuracy": 0.8560000061988831,
+        "ms_per_decision": 17.866142857472667
+      },
+      {
+        "threshold": 0.9,
+        "escalated": 0.4560000002384186,
+        "accuracy": 0.8579999804496765,
+        "ms_per_decision": 23.90612812479334
+      },
+      {
+        "threshold": 0.95,
+        "escalated": 0.722000002861023,
+        "accuracy": 0.8519999980926514,
+        "ms_per_decision": 37.29476173400843
+      },
+      {
+        "threshold": 0.99,
+        "escalated": 1.0,
+        "accuracy": 0.843999981880188,
+        "ms_per_decision": 51.28739356994629
+      },
+      {
+        "threshold": 1.01,
+        "escalated": 1.0,
+        "accuracy": 0.843999981880188,
+        "ms_per_decision": 51.28739356994629
+      }
+    ],
+    "nano_ms": 0.9541850090026855,
+    "llm_ms": 50.3332085609436
+  },
+  "grounded@data_heldout": {
+    "chosen_threshold": 0.8,
+    "rows": [
+      {
+        "threshold": 0.0,
+        "escalated": 0.0,
+        "accuracy": 0.675000011920929,
+        "ms_per_decision": 1.267146348953247
+      },
+      {
+        "threshold": 0.6,
+        "escalated": 0.09399999678134918,
+        "accuracy": 0.6970000267028809,
+        "ms_per_decision": 7.216845897083722
+      },
+      {
+        "threshold": 0.7,
+        "escalated": 0.1940000057220459,
+        "accuracy": 0.7239999771118164,
+        "ms_per_decision": 13.54631428410346
+      },
+      {
+        "threshold": 0.8,
+        "escalated": 0.3009999990463257,
+        "accuracy": 0.7450000047683716,
+        "ms_per_decision": 20.318844430165598
+      },
+      {
+        "threshold": 0.85,
+        "escalated": 0.38999998569488525,
+        "accuracy": 0.7540000081062317,
+        "ms_per_decision": 25.952069945888354
+      },
+      {
+        "threshold": 0.9,
+        "escalated": 0.5299999713897705,
+        "accuracy": 0.7879999876022339,
+        "ms_per_decision": 34.81332399002042
+      },
+      {
+        "threshold": 0.95,
+        "escalated": 0.7239999771118164,
+        "accuracy": 0.7940000295639038,
+        "ms_per_decision": 47.092491925170634
+      },
+      {
+        "threshold": 0.99,
+        "escalated": 1.0,
+        "accuracy": 0.7870000004768372,
+        "ms_per_decision": 64.5618245601654
+      },
+      {
+        "threshold": 1.01,
+        "escalated": 1.0,
+        "accuracy": 0.7870000004768372,
+        "ms_per_decision": 64.5618245601654
+      }
+    ],
+    "nano_ms": 1.267146348953247,
+    "llm_ms": 63.29467821121216
+  }
+}

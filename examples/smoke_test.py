@@ -33,22 +33,31 @@ def _():
     assert nanojev.__version__
 
 
-@check("published weights are listed on Hugging Face")
+@check("published weights are listed on Hugging Face (all versions)")
 def _():
     models, online = nanojev.list_models()
     names = [m.name for m in models]
     print(f"  online={online}, versions={names}")
-    assert online and "v0.1" in names
+    assert online and {"v0.1", "v1.0"} <= set(names)
 
 
-@check("weights download and load")
+@check("default weights download and load")
 def _():
     global d
     t0 = time.time()
-    d = nanojev.load("v0.1")
-    print(f"  loaded version {d.version} on {d.device} in {time.time() - t0:.1f}s")
-    assert d.version == "0.1"
+    d = nanojev.load()
+    print(f"  loaded version {d.version} ({d.config.get('params')}, base {d.config.get('base')}) "
+          f"on {d.device} in {time.time() - t0:.1f}s")
+    assert f"v{d.version}" == nanojev.DEFAULT_VERSION
     assert set(d.temperatures) == {"relevance", "sufficient", "grounded"}
+
+
+@check("older weights (v0.1) still load and work")
+def _():
+    old = nanojev.load("v0.1")
+    r = old.relevance("When was UCL founded?", ["University College London was founded in 1826."])[0]
+    print(f"  v{old.version}: directly answers={r['directly answers']:.3f}")
+    assert old.version == "0.1" and max(r, key=r.get) == "directly answers"
 
 
 @check("relevance: answer passage beats an unrelated one")

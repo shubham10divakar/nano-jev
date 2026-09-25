@@ -1,12 +1,12 @@
 """Nano-Jev: a tiny Jev-style typed decision model for RAG.
 
     import nanojev
-    d = nanojev.load()          # selected model (default: v0.1), downloaded on first use
+    d = nanojev.load()          # selected model (default: v1.0), downloaded on first use
     d = nanojev.load("v0.1")    # a specific version
     nanojev.list_models()       # versions on the Hub + which are downloaded
 """
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 from .registry import (DEFAULT_REPO, DEFAULT_VERSION, get_selected, list_models,  # noqa: E402
                        set_selected)

@@ -1,0 +1,190 @@
+---
+license: mit
+language:
+- en
+library_name: transformers
+pipeline_tag: text-classification
+base_model: microsoft/MiniLM-L12-H384-uncased
+datasets:
+- hotpotqa/hotpot_qa
+- rajpurkar/squad_v2
+- nyu-mll/multi_nli
+tags:
+- rag
+- retrieval
+- reranker
+- calibration
+- decision-model
+- cross-encoder
+---
+
+# Nano-Jev v1.0
+
+> **Version 1.0 (stable).** Jev-style decision model. Independent; not affiliated with
+> TypeSafe AI or the NanoJev GitHub project.
+
+A small (33.4M parameter) **typed decision model for RAG pipelines**. Give it a question,
+a set of options and some context; it returns a **calibrated probability for each option**
+in a few milliseconds. It never generates text.
+
+- Package: `pip install nano-jev` · Code: [github.com/shubham10divakar/nano-jev](https://github.com/shubham10divakar/nano-jev)
+- **All versions stay available** on this repo as git tags: `v1.0` (this, default) and
+  [`v0.1`](https://huggingface.co/sdmlai/nano-jev/tree/v0.1).
+
+| Decision | Type | Options | Input |
+|---|---|---|---|
+| `relevance` | score | irrelevant / partially relevant / directly answers | query + one passage |
+| `sufficient` | yes/no | yes / no | query + several passages |
+| `grounded` | yes/no | yes / no | claim + context |
+
+## v1.0 specs
+
+| | |
+|---|---|
+| Version | 1.0 (stable), released 2026-09-25, HF tag `v1.0` |
+| Architecture | Cross-encoder (MiniLM, 12 layers, hidden 384) + 1-logit head |
+| Parameters | 33.4M |
+| Base model | [`microsoft/MiniLM-L12-H384-uncased`](https://huggingface.co/microsoft/MiniLM-L12-H384-uncased) (MIT, general pretraining only, **no MS MARCO**) |
+| Max input length | 512 tokens |
+| Training data | 49,760 examples: HotpotQA distractor (6,000 questions), SQuAD 2.0 (6,000), MultiNLI (8,000); seed 0 |
+| Training | 3 epochs, **best epoch 2 kept** (dev NLL 0.429), batch 16 examples, AdamW lr 5e-5, weight decay 0.01, 6% warmup, linear decay, bf16 |
+| Hardware / time | 1× NVIDIA RTX 3060 12 GB, 13.5 min per epoch |
+| Calibration | Per-decision temperature: relevance 1.295, sufficient 1.347, grounded 1.381 (`calibration.json`) |
+| Base selection | Best of 3 clean-licence bases (MiniLM-L6, ELECTRA-small, MiniLM-L12) on the test split |
+
+### Versions
+
+| | v0.1 (research preview) | **v1.0** |
+|---|---|---|
+| Base | `cross-encoder/ms-marco-MiniLM-L6-v2` (MS MARCO lineage) | `microsoft/MiniLM-L12-H384-uncased` (clean) |
+| Parameters | 22.7M | 33.4M |
+| Weights licence | Apache-2.0 + MS MARCO non-commercial note | **MIT** |
+| Test accuracy (rel / suff / grounded) | 0.798 / 0.759 / 0.804 | **0.815 / 0.845 / 0.844** |
+| Held-out accuracy (rel / suff / grounded) | 0.631 / 0.680 / 0.672 | 0.635 / 0.670 / 0.675 |
+| Custom option sets (`decide`) | better | **weaker** (see limitations) |
+
+## Usage
+
+```bash
+pip install nano-jev
+```
+
+```python
+import nanojev
+
+d = nanojev.load()          # v1.0 (default); nanojev.load("v0.1") for the older version
+
+d.relevance("When was UCL founded?", ["University College London was founded in 1826."])
+# [{'irrelevant': 0.15, 'partially relevant': 0.17, 'directly answers': 0.68}]
+d.sufficient(query, passages)   # {'yes': .., 'no': ..}
+d.grounded(claim, context)      # {'yes': .., 'no': ..}
+```
+
+Command line: `nano-jev list`, `nano-jev relevance -q QUERY -p PASSAGE`, and more; see the
+[README](https://github.com/shubham10divakar/nano-jev#command-line).
+
+With plain `transformers` (no extra code):
+
+```python
+import json, torch
+from huggingface_hub import hf_hub_download
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+repo, rev = "sdmlai/nano-jev", "v1.0"
+tok = AutoTokenizer.from_pretrained(repo, revision=rev)
+model = AutoModelForSequenceClassification.from_pretrained(repo, revision=rev).eval()
+temps = json.load(open(hf_hub_download(repo, "calibration.json", revision=rev)))
+
+query, passage = "When was UCL founded?", "University College London was founded in 1826."
+question = f"How relevant is this passage to the query: {query}"
+options = ["irrelevant", "partially relevant", "directly answers"]
+enc = tok([f"question: {question} option: {o}" for o in options], [passage] * len(options),
+          truncation="only_second", max_length=512, padding=True, return_tensors="pt")
+with torch.no_grad():
+    logits = model(**enc).logits.squeeze(-1)
+print(dict(zip(options, torch.softmax(logits / temps["relevance"], dim=0).tolist())))
+```
+
+Question templates: relevance `How relevant is this passage to the query: {query}`;
+sufficient `Does the context contain enough information to answer: {query}` (context =
+passages as `[1] title: text` lines); grounded `Is this claim supported by the context? Claim: {claim}`.
+
+## Results
+
+Temperatures and baseline mappings are fitted on the in-distribution calibration split and
+applied unchanged everywhere.
+
+### Test split (held-out halves of HotpotQA / SQuAD 2.0 / MultiNLI validation)
+
+| Decision | **Nano-Jev v1.0** (33M) | Nano-Jev v0.1 (23M) | bge-reranker-v2-m3 (568M) | Qwen3-4B-Instruct, prompted (4B) |
+|---|---|---|---|---|
+| relevance (3-way) | **0.815** | 0.798 | 0.694 | 0.660 |
+| sufficient | **0.845** | 0.759 | 0.692 | 0.706 |
+| grounded | **0.844** | 0.804 | 0.798 | **0.844** |
+
+Calibration error (ECE) after temperature scaling: relevance 0.017, sufficient 0.024, grounded 0.048.
+
+### Held-out datasets (never used for training or calibration)
+
+MuSiQue (multi-hop QA with hard retrieved distractors) for relevance and 2-hop
+sufficiency; VitaminC (claim verification) for groundedness.
+
+| Decision | **Nano-Jev v1.0** | Nano-Jev v0.1 | bge-reranker-v2-m3 | Qwen3-4B-Instruct, prompted |
+|---|---|---|---|---|
+| relevance (3-way, MuSiQue) | **0.635** | 0.631 | 0.478 | 0.503 |
+| sufficient (2-hop MuSiQue) | 0.670 | **0.680** | 0.597 | 0.653 |
+| grounded (VitaminC) | 0.675 | 0.672 | 0.737 | **0.787** |
+
+**Accuracy drops by about 15–20 points on unseen datasets, and calibration does not
+transfer** (held-out ECE 0.17–0.18). Re-fit the temperatures, or at least re-check your
+thresholds, on your own data.
+
+### Speed
+
+ms per decision, batched, RTX 3060: v1.0 1.0–4.0 · v0.1 0.6–2.3 · bge-reranker 3.5–17.9 ·
+Qwen3-4B 54.5–379.1. On CPU (Ryzen 7 5800X, 8 threads) v1.0 takes ~17 ms per decision and v0.1 ~9 ms.
+
+### Cascade: escalate unsure `grounded` decisions to an LLM
+
+Accept Nano-Jev's verdict when its top probability ≥ a threshold, otherwise ask
+Qwen3-4B-Instruct. The threshold (0.80) was chosen on the calibration split.
+
+| | escalated to LLM | test accuracy | held-out accuracy | ms/decision (test) |
+|---|---|---|---|---|
+| Nano-Jev v1.0 only | 0% | 0.844 | 0.675 | 1.0 |
+| **Cascade, threshold 0.80** | 26% (test) / 30% (held-out) | **0.868** | 0.745 | 13.8 |
+| Cascade, threshold 0.90 | 46% / 53% | 0.858 | **0.788** | 23.9 |
+| Qwen3-4B only | 100% | 0.844 | 0.787 | 51.3 |
+
+On the test split the cascade **beats both models alone** while sending only a quarter of
+the decisions to the LLM. On held-out data a 0.90 threshold matches the LLM alone with
+about half the LLM calls. Full sweep and plot:
+[results/v1.0/cascade](https://github.com/shubham10divakar/nano-jev/tree/main/results/v1.0/cascade).
+
+```python
+def grounded(claim, context, threshold=0.8):
+    p = d.grounded(claim, context)
+    if max(p.values()) >= threshold:
+        return p                       # confident: ~1 ms
+    return ask_llm(claim, context)     # unsure: escalate
+```
+
+## Limitations
+
+- **Out-of-distribution accuracy is much lower** than on the test split (see above), and
+  calibration fitted in-distribution is overconfident on new data.
+- **Custom option sets** (`decide()` with your own labels) are weaker than in v0.1, whose
+  MS MARCO-trained base had learned general text–label matching. For custom options,
+  consider v0.1 (mind its licence note) or fine-tune on your labels.
+- **English, Wikipedia-style text.**
+- "partially relevant" follows HotpotQA rules: a supporting paragraph without the answer string.
+
+## Licence
+
+Weights: **MIT**, the same licence as the base model; no MS MARCO lineage.
+
+Fine-tuning data: [HotpotQA](https://hotpotqa.github.io/) (CC BY-SA 4.0),
+[SQuAD 2.0](https://rajpurkar.github.io/SQuAD-explorer/) (CC BY-SA 4.0),
+[MultiNLI](https://cims.nyu.edu/~sbowman/multinli/) (see its licence terms).
+Held-out evaluation: [MuSiQue](https://github.com/StonyBrookNLP/musique) (CC BY 4.0),
+[VitaminC](https://github.com/TalSchuster/VitaminC) (CC BY-SA 3.0).

@@ -1,0 +1,45 @@
+{
+  "model_name": "nano-jev",
+  "version": "1.0",
+  "status": "stable",
+  "released": "2026-09-25",
+  "base": "microsoft/MiniLM-L12-H384-uncased",
+  "max_length": 512,
+  "schema_version": "0.1",
+  "decisions": {
+    "relevance": [
+      "irrelevant",
+      "partially relevant",
+      "directly answers"
+    ],
+    "sufficient": [
+      "yes",
+      "no"
+    ],
+    "grounded": [
+      "yes",
+      "no"
+    ]
+  },
+  "epochs_trained": 2,
+  "dev_nll": 0.42874409914016726,
+  "params": "33.4M",
+  "train_data": {
+    "hotpotqa_distractor_questions": 6000,
+    "squad_v2": 6000,
+    "multi_nli": 8000,
+    "total_examples": 49760,
+    "seed": 0
+  },
+  "train_hparams": {
+    "epochs": 3,
+    "best_epoch": 2,
+    "batch_size_examples": 16,
+    "lr": 5e-05,
+    "weight_decay": 0.01,
+    "warmup": 0.06,
+    "precision": "bf16",
+    "hardware": "NVIDIA RTX 3060 12GB",
+    "train_time_min": 40.5
+  }
+}

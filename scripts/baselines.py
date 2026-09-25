@@ -9,6 +9,10 @@ Both then get the same temperature scaling and metrics as Nano-Jev.
 
     python scripts/baselines.py --which all
     python scripts/baselines.py --which llm --limit 50     # quick check
+    python scripts/baselines.py --which all --test-data data_heldout --suffix _heldout
+
+Mappings and temperatures are fitted on <data>/calib.jsonl; --test-data reports them
+unchanged on another test set.
 """
 
 import argparse
@@ -104,14 +108,17 @@ def llm_logits(model, tok, examples, batch_size=8, max_state_tokens=900) -> torc
         chunk = examples[i : i + batch_size]
         enc = tok([llm_prompt(tok, ex, max_state_tokens) for ex in chunk], return_tensors="pt",
                   padding=True).to(DEVICE)
-        logits = model(**enc).logits[:, -1, :]  # left padding: last position is the answer slot
+        # Left padding: the last position is the answer slot. logits_to_keep=1 skips the
+        # other positions, which would otherwise cost ~2 GB of VRAM per batch (152k vocab).
+        logits = model(**enc, logits_to_keep=1).logits[:, -1, :]
         out.append(logits[:, letter_ids].float().cpu())
     return torch.cat(out)
 
 
 def run_llm(name, calib, test) -> dict:
     tok = AutoTokenizer.from_pretrained(name, padding_side="left")
-    model = AutoModelForCausalLM.from_pretrained(name, dtype=torch.bfloat16).to(DEVICE).eval()
+    model = AutoModelForCausalLM.from_pretrained(
+        name, dtype=torch.bfloat16, device_map=DEVICE, low_cpu_mem_usage=True).eval()  # straight to GPU: avoids a ~8 GB RAM peak
     report = {}
     for dec in sorted(test):
         c = llm_logits(model, tok, calib[dec])
@@ -130,13 +137,15 @@ def main():
     ap.add_argument("--which", default="all", choices=["reranker", "llm", "all"])
     ap.add_argument("--reranker", default="BAAI/bge-reranker-v2-m3")
     ap.add_argument("--llm", default="Qwen/Qwen3-4B-Instruct-2507")
-    ap.add_argument("--data", default="data")
+    ap.add_argument("--data", default="data", help="folder with calib.jsonl")
+    ap.add_argument("--test-data", help="folder with the test.jsonl to report on (default: --data)")
+    ap.add_argument("--suffix", default="", help="appended to output file names, e.g. _heldout")
     ap.add_argument("--out", default="results/baselines")
     ap.add_argument("--limit", type=int, default=0, help="max examples per decision and split")
     args = ap.parse_args()
 
     calib = by_decision(read_jsonl(Path(args.data) / "calib.jsonl"))
-    test = by_decision(read_jsonl(Path(args.data) / "test.jsonl"))
+    test = by_decision(read_jsonl(Path(args.test_data or args.data) / "test.jsonl"))
     if args.limit:
         calib = {k: v[: args.limit] for k, v in calib.items()}
         test = {k: v[: args.limit] for k, v in test.items()}
@@ -150,11 +159,12 @@ def main():
     for kind, name, fn in runs:
         print(f"== {kind}: {name}", flush=True)
         report = fn(name, calib, test)
-        table = render_table(f"{kind} baseline — `{name}`", report)
+        where = f" on `{args.test_data}` (fitted on `{args.data}` calib)" if args.test_data else ""
+        table = render_table(f"{kind} baseline — `{name}`{where}", report)
         print(table, flush=True)
         if not args.limit:
-            save(report, Path(args.out) / f"{kind}.json")
-            (Path(args.out) / f"{kind}.md").write_text(table + "\n", encoding="utf-8")
+            save(report, Path(args.out) / f"{kind}{args.suffix}.json")
+            (Path(args.out) / f"{kind}{args.suffix}.md").write_text(table + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
