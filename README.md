@@ -65,10 +65,17 @@ results/           tracked copies of evaluation tables
 
 v0.1 on held-out test halves, after temperature scaling. Details: [`results/v0.1.md`](results/v0.1.md).
 
-| decision | acc | macro-F1 | ECE | untrained init acc |
-|---|---|---|---|---|
-| relevance (3-way) | 0.798 | 0.764 | 0.020 | 0.273 |
-| sufficient | 0.759 | 0.758 | 0.019 | 0.503 |
-| grounded | 0.804 | 0.804 | 0.045 | 0.540 |
+Accuracy on the same test split (all models temperature-calibrated on the same calib split):
 
-Training takes ~15 min on an RTX 3060.
+| decision | Nano-Jev 22M | bge-reranker-v2-m3 568M | Qwen3-4B prompted | untrained init |
+|---|---|---|---|---|
+| relevance (3-way) | **0.798** | 0.694 | 0.660 | 0.273 |
+| sufficient | **0.759** | 0.692 | 0.706 | 0.503 |
+| grounded | 0.804 | 0.798 | **0.844** | 0.540 |
+
+Nano-Jev is ~90–165× faster than the prompted LLM. The baselines are zero-shot on these
+datasets and Nano-Jev is not, so read the caveats in
+[`results/v0.1_comparison.md`](results/v0.1_comparison.md). Training takes ~15 min on an
+RTX 3060.
+
+Baselines: `scripts\baselines.py --which all`.

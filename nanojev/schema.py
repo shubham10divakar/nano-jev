@@ -35,6 +35,16 @@ DECISIONS: dict[str, Decision] = {
 }
 
 
+def subject_of(example: dict) -> str:
+    """Recover the query / claim filled into a built-in decision's question template.
+
+    Every template ends with its single field, so the subject is whatever follows the
+    template's fixed prefix.
+    """
+    prefix = DECISIONS[example["decision"]].question.split("{")[0]
+    return example["question"][len(prefix):]
+
+
 def format_passages(passages: list[tuple[str, str]]) -> str:
     """Render (title, text) passages as one state string."""
     return "\n".join(f"[{i + 1}] {title}: {text}" for i, (title, text) in enumerate(passages))

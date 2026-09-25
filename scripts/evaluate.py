@@ -14,19 +14,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from nanojev import model as M  # noqa: E402
-from nanojev.calibration import fit_temperature, metrics  # noqa: E402
-
-
-def read_jsonl(path):
-    with open(path, encoding="utf-8") as f:
-        return [json.loads(line) for line in f]
-
-
-def by_decision(examples):
-    groups = {}
-    for ex in examples:
-        groups.setdefault(ex["decision"], []).append(ex)
-    return groups
+from nanojev.report import (by_decision, decision_report, labels_of, read_jsonl,  # noqa: E402
+                            render_table)
 
 
 def main():
@@ -42,39 +31,21 @@ def main():
     calib = by_decision(read_jsonl(Path(args.data) / "calib.jsonl"))
     test = by_decision(read_jsonl(Path(args.data) / "test.jsonl"))
 
-    temps, report = {}, {}
+    report = {}
     for dec in sorted(test):
         c_logits = torch.stack(M.score(model, tok, calib[dec], args.max_length, device))
-        c_labels = torch.tensor([ex["label"] for ex in calib[dec]])
-        temps[dec] = fit_temperature(c_logits, c_labels)
-
         t0 = time.time()
         t_logits = torch.stack(M.score(model, tok, test[dec], args.max_length, device))
         ms = 1000 * (time.time() - t0) / len(test[dec])
-        t_labels = torch.tensor([ex["label"] for ex in test[dec]])
-        report[dec] = {
-            "temperature": temps[dec],
-            "raw": metrics(t_logits, t_labels),
-            "calibrated": metrics(t_logits, t_labels, temps[dec]),
-            "ms_per_decision": ms,
-        }
+        report[dec] = decision_report(c_logits, labels_of(calib[dec]),
+                                      t_logits, labels_of(test[dec]), ms)
 
-    lines = [f"# Nano-Jev results — `{args.model}`", "",
-             "| decision | n | T | acc | macro-F1 | NLL raw → cal | Brier raw → cal "
-             "| ECE raw → cal | ms/decision |",
-             "|---|---|---|---|---|---|---|---|---|"]
-    for dec, r in report.items():
-        raw, cal = r["raw"], r["calibrated"]
-        lines.append(
-            f"| {dec} | {raw['n']} | {r['temperature']:.2f} | {cal['accuracy']:.3f} "
-            f"| {cal['macro_f1']:.3f} | {raw['nll']:.3f} → {cal['nll']:.3f} "
-            f"| {raw['brier']:.3f} → {cal['brier']:.3f} | {raw['ece']:.3f} → {cal['ece']:.3f} "
-            f"| {r['ms_per_decision']:.1f} |")
-    table = "\n".join(lines)
+    table = render_table(f"Nano-Jev — `{args.model}`", report)
     print(table)
 
     if not args.no_save:
         out = Path(args.model)
+        temps = {dec: r["temperature"] for dec, r in report.items()}
         (out / "calibration.json").write_text(json.dumps(temps, indent=2))
         (out / "results.json").write_text(json.dumps(report, indent=2))
         (out / "results.md").write_text(table + "\n", encoding="utf-8")
