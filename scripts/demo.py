@@ -1,6 +1,7 @@
-"""Try the trained Decider on a hand-written RAG example.
+"""Try the Decider on a hand-written RAG example.
 
-    python scripts/demo.py --model runs/nano-jev-v0.1
+    python scripts/demo.py                       # selected model (default v0.1, downloaded on first use)
+    python scripts/demo.py --model runs/nano-jev-dev
 """
 
 import argparse
@@ -17,9 +18,10 @@ def show(d):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="runs/nano-jev-v0.1")
+    ap.add_argument("--model", help="version, Hub repo or local folder (default: selected)")
     args = ap.parse_args()
     d = Decider.from_pretrained(args.model)
+    print(f"model version {d.version}\n")
 
     query = "In which year was the university attended by Ada Lovelace's tutor founded?"
     passages = [

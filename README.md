@@ -56,17 +56,67 @@ Zero-shot baseline (the untrained init):
 
 ## Use
 
-```python
-from nanojev import Decider
+Until `pip install nano-jev` is published, run these from the repo root with the venv
+activated (`.venv\Scripts\activate`), so `nanojev` is importable.
 
-d = Decider.from_pretrained("sdmlai/nano-jev", revision="v0.1")   # or a local folder
+Pretrained weights live on Hugging Face at
+[huggingface.co/sdmlai/nano-jev](https://huggingface.co/sdmlai/nano-jev), one git tag per
+version. They download automatically the first time you use a version, then load from the
+local cache (and work offline).
+
+### Python
+
+```python
+import nanojev
+
+d = nanojev.load()                  # selected model (default: v0.1), downloaded on first use
+d = nanojev.load("v0.1")            # a specific version
+d = nanojev.load("runs/nano-jev-dev")   # your own trained folder
+
 d.relevance(query, passages)        # [{"irrelevant": .., "partially relevant": .., "directly answers": ..}, ...]
 d.sufficient(query, passages)       # {"yes": .., "no": ..}
 d.grounded(claim, context)          # {"yes": .., "no": ..}
 d.decide("Which topic?", ["sports", "finance"], text)   # any option set
+d.version                           # "0.1"
+
+models, online = nanojev.list_models()   # versions on the Hub, with .downloaded flags
 ```
 
-Pretrained v0.1 weights: [huggingface.co/sdmlai/nano-jev](https://huggingface.co/sdmlai/nano-jev) (tag `v0.1`). The first call downloads and caches them.
+`nanojev.Decider.from_pretrained("sdmlai/nano-jev", revision="v0.1")` also works.
+
+### Command line
+
+```powershell
+python -m nanojev list                  # available weights; * marks the selected one
+python -m nanojev list --local runs     # also show your local training runs
+python -m nanojev download v0.1         # fetch ahead of time (e.g. before going offline)
+python -m nanojev use v0.1              # choose the default weights (a version, Hub repo[@tag] or folder)
+python -m nanojev use --reset           # back to the package default
+python -m nanojev current               # what's selected and where it is on disk
+
+python -m nanojev relevance -q "When was UCL founded?" -p "University College London was founded in 1826."
+python -m nanojev sufficient -q QUERY -p PASSAGE -p PASSAGE
+python -m nanojev grounded --claim "UCL was founded in 1900." --context "University College London was founded in 1826."
+python -m nanojev decide --question "Which topic is this passage about?" -o computing -o cooking --state TEXT
+```
+
+Decision commands take `--model` to override the selection for one call, and `--json`.
+
+Example `list` output:
+
+```
+   MODEL  SOURCE  STATUS            BASE                                 PARAMS  RELEASED    DOWNLOADED
+*  v0.1   hub     research preview  cross-encoder/ms-marco-MiniLM-L6-v2  22.7M   2026-09-25  yes
+
+selected: v0.1  (from default)
+```
+
+### Which weights get used
+
+1. `--model` / the argument to `nanojev.load(...)`
+2. the `NANOJEV_MODEL` environment variable
+3. the choice saved by `python -m nanojev use` (in `~/.nanojev/config.json`)
+4. the package default: `v0.1`
 
 ## Layout
 
@@ -78,6 +128,8 @@ nanojev/
   calibration.py   temperature scaling, ECE / Brier / NLL
   report.py        shared calibrate-and-report flow
   decider.py       inference API
+  registry.py      list / download / select weights
+  __main__.py      command-line tool (python -m nanojev)
 scripts/           prepare_data, train, evaluate, baselines, demo
 data/              v0.1 train / calib / test splits (JSONL)
 results/           evaluation tables and baseline comparison
