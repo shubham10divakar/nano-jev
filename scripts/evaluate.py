@@ -1,0 +1,85 @@
+"""Fit per-decision temperatures on calib, report metrics on test.
+
+    python scripts/evaluate.py --model runs/nano-jev
+    python scripts/evaluate.py --model cross-encoder/ms-marco-MiniLM-L6-v2 --no-save   # zero-shot init baseline
+"""
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+import torch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from nanojev import model as M  # noqa: E402
+from nanojev.calibration import fit_temperature, metrics  # noqa: E402
+
+
+def read_jsonl(path):
+    with open(path, encoding="utf-8") as f:
+        return [json.loads(line) for line in f]
+
+
+def by_decision(examples):
+    groups = {}
+    for ex in examples:
+        groups.setdefault(ex["decision"], []).append(ex)
+    return groups
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", default="runs/nano-jev")
+    ap.add_argument("--data", default="data")
+    ap.add_argument("--max-length", type=int, default=512)
+    ap.add_argument("--no-save", action="store_true", help="don't write calibration.json")
+    args = ap.parse_args()
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, tok = M.load(args.model, device)
+    calib = by_decision(read_jsonl(Path(args.data) / "calib.jsonl"))
+    test = by_decision(read_jsonl(Path(args.data) / "test.jsonl"))
+
+    temps, report = {}, {}
+    for dec in sorted(test):
+        c_logits = torch.stack(M.score(model, tok, calib[dec], args.max_length, device))
+        c_labels = torch.tensor([ex["label"] for ex in calib[dec]])
+        temps[dec] = fit_temperature(c_logits, c_labels)
+
+        t0 = time.time()
+        t_logits = torch.stack(M.score(model, tok, test[dec], args.max_length, device))
+        ms = 1000 * (time.time() - t0) / len(test[dec])
+        t_labels = torch.tensor([ex["label"] for ex in test[dec]])
+        report[dec] = {
+            "temperature": temps[dec],
+            "raw": metrics(t_logits, t_labels),
+            "calibrated": metrics(t_logits, t_labels, temps[dec]),
+            "ms_per_decision": ms,
+        }
+
+    lines = [f"# Nano-Jev results — `{args.model}`", "",
+             "| decision | n | T | acc | macro-F1 | NLL raw → cal | Brier raw → cal "
+             "| ECE raw → cal | ms/decision |",
+             "|---|---|---|---|---|---|---|---|---|"]
+    for dec, r in report.items():
+        raw, cal = r["raw"], r["calibrated"]
+        lines.append(
+            f"| {dec} | {raw['n']} | {r['temperature']:.2f} | {cal['accuracy']:.3f} "
+            f"| {cal['macro_f1']:.3f} | {raw['nll']:.3f} → {cal['nll']:.3f} "
+            f"| {raw['brier']:.3f} → {cal['brier']:.3f} | {raw['ece']:.3f} → {cal['ece']:.3f} "
+            f"| {r['ms_per_decision']:.1f} |")
+    table = "\n".join(lines)
+    print(table)
+
+    if not args.no_save:
+        out = Path(args.model)
+        (out / "calibration.json").write_text(json.dumps(temps, indent=2))
+        (out / "results.json").write_text(json.dumps(report, indent=2))
+        (out / "results.md").write_text(table + "\n", encoding="utf-8")
+        print(f"\nsaved calibration.json and results to {out}")
+
+
+if __name__ == "__main__":
+    main()

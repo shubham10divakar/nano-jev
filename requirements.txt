@@ -1,0 +1,9 @@
+# Install PyTorch with CUDA first:
+#   uv pip install torch --index-url https://download.pytorch.org/whl/cu128
+torch>=2.5
+transformers>=4.45
+datasets>=3.0
+accelerate
+numpy
+scikit-learn
+tqdm
