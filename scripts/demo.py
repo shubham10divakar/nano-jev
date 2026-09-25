@@ -1,6 +1,6 @@
 """Try the trained Decider on a hand-written RAG example.
 
-    python scripts/demo.py --model runs/nano-jev
+    python scripts/demo.py --model runs/nano-jev-v0.1
 """
 
 import argparse
@@ -17,7 +17,7 @@ def show(d):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="runs/nano-jev")
+    ap.add_argument("--model", default="runs/nano-jev-v0.1")
     args = ap.parse_args()
     d = Decider.from_pretrained(args.model)
 

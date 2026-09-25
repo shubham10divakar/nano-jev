@@ -1,6 +1,6 @@
 """Fit per-decision temperatures on calib, report metrics on test.
 
-    python scripts/evaluate.py --model runs/nano-jev
+    python scripts/evaluate.py --model runs/nano-jev-v0.1
     python scripts/evaluate.py --model cross-encoder/ms-marco-MiniLM-L6-v2 --no-save   # zero-shot init baseline
 """
 
@@ -20,7 +20,7 @@ from nanojev.report import (by_decision, decision_report, labels_of, read_jsonl,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="runs/nano-jev")
+    ap.add_argument("--model", default="runs/nano-jev-v0.1")
     ap.add_argument("--data", default="data")
     ap.add_argument("--max-length", type=int, default=512)
     ap.add_argument("--no-save", action="store_true", help="don't write calibration.json")

@@ -7,3 +7,4 @@ accelerate
 numpy
 scikit-learn
 tqdm
+huggingface_hub>=0.24

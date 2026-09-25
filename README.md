@@ -42,9 +42,9 @@ On Linux/macOS use `.venv/bin/python`.
 
 ```powershell
 .venv\Scripts\python.exe scripts\prepare_data.py --preset default   # HotpotQA + SQuAD 2.0 + MultiNLI -> data/
-.venv\Scripts\python.exe scripts\train.py                           # -> runs/nano-jev  (~15 min on an RTX 3060)
-.venv\Scripts\python.exe scripts\evaluate.py                        # fits temperatures, writes results
-.venv\Scripts\python.exe scripts\demo.py
+.venv\Scripts\python.exe scripts\train.py                           # -> runs/nano-jev-dev  (~15 min on an RTX 3060)
+.venv\Scripts\python.exe scripts\evaluate.py --model runs\nano-jev-dev   # fits temperatures, writes results
+.venv\Scripts\python.exe scripts\demo.py --model runs\nano-jev-dev
 .venv\Scripts\python.exe scripts\baselines.py --which all           # bge-reranker + prompted Qwen3-4B (~35 min)
 ```
 
@@ -59,14 +59,14 @@ Zero-shot baseline (the untrained init):
 ```python
 from nanojev import Decider
 
-d = Decider.from_pretrained("runs/nano-jev")
+d = Decider.from_pretrained("sdmlai/nano-jev", revision="v0.1")   # or a local folder
 d.relevance(query, passages)        # [{"irrelevant": .., "partially relevant": .., "directly answers": ..}, ...]
 d.sufficient(query, passages)       # {"yes": .., "no": ..}
 d.grounded(claim, context)          # {"yes": .., "no": ..}
 d.decide("Which topic?", ["sports", "finance"], text)   # any option set
 ```
 
-Pretrained weights will be published on Hugging Face; until then, train locally (above).
+Pretrained v0.1 weights: [huggingface.co/sdmlai/nano-jev](https://huggingface.co/sdmlai/nano-jev) (tag `v0.1`). The first call downloads and caches them.
 
 ## Layout
 

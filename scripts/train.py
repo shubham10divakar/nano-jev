@@ -1,6 +1,6 @@
 """Fine-tune the Nano-Jev scorer on typed-decision examples.
 
-    python scripts/train.py --data data --out runs/nano-jev
+    python scripts/train.py --data data --out runs/nano-jev-dev
 """
 
 import argparse
@@ -34,7 +34,7 @@ def dev_nll(model, tok, examples, max_length, device):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="data")
-    ap.add_argument("--out", default="runs/nano-jev")
+    ap.add_argument("--out", default="runs/nano-jev-dev")
     ap.add_argument("--base", default=M.DEFAULT_BASE)
     ap.add_argument("--epochs", type=int, default=2)
     ap.add_argument("--batch-size", type=int, default=16, help="examples (not option pairs)")

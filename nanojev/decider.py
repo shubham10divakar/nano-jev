@@ -15,12 +15,21 @@ class Decider:
         self.temperatures, self.device = temperatures, device
 
     @classmethod
-    def from_pretrained(cls, path: str, device: str | None = None) -> "Decider":
+    def from_pretrained(cls, path: str, device: str | None = None,
+                        revision: str | None = None) -> "Decider":
+        """Load from a local folder or a Hugging Face repo id (e.g. "user/nano-jev").
+
+        Hub repos are downloaded whole, so the calibration temperatures come along.
+        """
         device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        model, tok = M.load(path, device)
-        cfg_path = Path(path) / "nanojev_config.json"
+        local = Path(path)
+        if not local.is_dir():
+            from huggingface_hub import snapshot_download
+            local = Path(snapshot_download(path, revision=revision))
+        model, tok = M.load(str(local), device)
+        cfg_path = local / "nanojev_config.json"
         cfg = json.loads(cfg_path.read_text()) if cfg_path.exists() else {}
-        cal_path = Path(path) / "calibration.json"
+        cal_path = local / "calibration.json"
         temps = json.loads(cal_path.read_text()) if cal_path.exists() else {}
         return cls(model, tok, cfg.get("max_length", 512), temps, device)
 
