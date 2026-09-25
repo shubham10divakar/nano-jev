@@ -63,4 +63,12 @@ results/           tracked copies of evaluation tables
 
 ## Results
 
-See [`results/`](results/).
+v0.1 on held-out test halves, after temperature scaling. Details: [`results/v0.1.md`](results/v0.1.md).
+
+| decision | acc | macro-F1 | ECE | untrained init acc |
+|---|---|---|---|---|
+| relevance (3-way) | 0.798 | 0.764 | 0.020 | 0.273 |
+| sufficient | 0.759 | 0.758 | 0.019 | 0.503 |
+| grounded | 0.804 | 0.804 | 0.045 | 0.540 |
+
+Training takes ~15 min on an RTX 3060.
