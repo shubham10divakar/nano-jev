@@ -6,11 +6,13 @@
     nanojev.list_models()       # versions on the Hub + which are downloaded
 """
 
-from .registry import (DEFAULT_REPO, DEFAULT_VERSION, get_selected, list_models,
-                       set_selected)
-from .schema import DECISIONS, SCHEMA_VERSION
+__version__ = "0.1.0"
 
-__all__ = ["Decider", "load", "list_models", "get_selected", "set_selected",
+from .registry import (DEFAULT_REPO, DEFAULT_VERSION, get_selected, list_models,  # noqa: E402
+                       set_selected)
+from .schema import DECISIONS, SCHEMA_VERSION  # noqa: E402
+
+__all__ = ["Decider", "load", "list_models", "get_selected", "set_selected", "__version__",
            "DEFAULT_REPO", "DEFAULT_VERSION", "DECISIONS", "SCHEMA_VERSION"]
 
 

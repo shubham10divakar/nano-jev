@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nano-jev"
+dynamic = ["version"]
+description = "Tiny calibrated typed-decision model for RAG pipelines: relevance, sufficiency, groundedness"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Subham" }]
+keywords = ["rag", "retrieval", "reranker", "calibration", "llm", "decision-model", "jev"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.1",
+    "transformers>=4.45",
+    "huggingface_hub>=0.24",
+]
+
+[project.optional-dependencies]
+# Only needed to rebuild the data, train, evaluate or run baselines (scripts/ in the repo).
+train = ["datasets>=3.0", "scikit-learn", "accelerate", "numpy", "tqdm"]
+test = ["pytest>=8"]
+
+[project.scripts]
+nano-jev = "nanojev.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/shubham10divakar/nano-jev"
+Repository = "https://github.com/shubham10divakar/nano-jev"
+Issues = "https://github.com/shubham10divakar/nano-jev/issues"
+Model = "https://huggingface.co/sdmlai/nano-jev"
+
+[tool.hatch.version]
+path = "nanojev/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["nanojev"]
+
+[tool.hatch.build.targets.sdist]
+# Keep the source distribution small: no data/, results/ or training runs.
+include = ["nanojev", "tests", "README.md", "LICENSE", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["network: downloads the real model from Hugging Face (set NANOJEV_NETWORK_TESTS=1)"]

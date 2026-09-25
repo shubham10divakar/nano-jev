@@ -1,5 +1,7 @@
 """Command-line tool: list, download and choose weights; run decisions.
 
+Installed as `nano-jev`; `python -m nanojev` is the same thing.
+
     python -m nanojev list                   # versions on the Hub (* = selected)
     python -m nanojev list --local runs      # also show local training runs
     python -m nanojev download v0.1
@@ -115,8 +117,11 @@ def cmd_decide(args):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="python -m nanojev",
+    from . import __version__
+    ap = argparse.ArgumentParser(prog="nano-jev",
                                  description="Nano-Jev: tiny calibrated decision model for RAG.")
+    ap.add_argument("--version", action="version",
+                    version=f"nano-jev {__version__} (default weights {registry.DEFAULT_VERSION})")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("list", help="list available weights")
