@@ -49,8 +49,11 @@ path = "nanojev/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["nanojev"]
+# Metadata 2.4 instead of hatchling's newer default: older twine/pip reject 2.5.
+core-metadata-version = "2.4"
 
 [tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
 # Keep the source distribution small: no data/, results/ or training runs.
 include = ["nanojev", "tests", "README.md", "LICENSE", "pyproject.toml"]
 
