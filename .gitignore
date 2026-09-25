@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Model outputs (weights go to Hugging Face, not git) and smoke-test scratch data
+runs/
+data_smoke/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
