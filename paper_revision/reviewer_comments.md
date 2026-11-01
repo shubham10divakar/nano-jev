@@ -97,3 +97,10 @@ options, systematic). Blue `\revnote{}` marks wording to settle once results are
 ## 3. Resume here
 Next action (user): run RUNBOOK §0 (AggreFact access) and §2 training T1–T3; the "can run NOW"
 baselines in §3 can go in parallel or before. Then §3–§5, resolve blue notes, fill the letter.
+
+Progress 2026-11-01 (commit 6a801ba): done = BGE reranker on test + held-out, Qwen3-4B on test
+(acc grounded/relevance/sufficient: Qwen 0.844/0.660/0.706; BGE test 0.798/0.694/0.692;
+BGE held-out 0.737/0.478/0.597). Still missing: Qwen held-out (`llm_heldout.json`; re-run the
+held-out baselines command), AggreFact, grounded checkers, custom Qwen, and ALL training (T1–T3)
+plus everything after it. Ordered command list = RUNBOOK, or `paper_revision/run_all.ps1`
+(skips finished steps).
