@@ -1,6 +1,13 @@
 """Fine-tune the Nano-Jev scorer on typed-decision examples.
 
     python scripts/train.py --data data --out runs/nano-jev-dev
+
+If <data>/dev.jsonl exists (see scripts/make_dev_split.py) it selects the best epoch, and
+calib.jsonl is not read at all. Otherwise the legacy v1.0 protocol is used: a slice of
+calib.jsonl selects the epoch (calib is then also used for temperatures: a leak, R3.2).
+
+Revision runs (clean protocol, v1.0 recipe):
+    python scripts/train.py --data data_clean --base microsoft/MiniLM-L12-H384-uncased         --epochs 3 --lr 5e-5 --seed 0 --out runs/v2/nanojev/seed0
 """
 
 import argparse
@@ -42,17 +49,29 @@ def main():
     ap.add_argument("--max-length", type=int, default=512)
     ap.add_argument("--dev-size", type=int, default=1500)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--train-fraction", type=float, default=1.0,
+                    help="use a random fraction of train.jsonl (data-size ablation)")
     args = ap.parse_args()
 
     random.seed(args.seed)
     torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     use_amp = device == "cuda"
 
     train = read_jsonl(Path(args.data) / "train.jsonl")
-    calib = read_jsonl(Path(args.data) / "calib.jsonl")
-    # Dev loss is tracked on a slice of calib; it only selects the best epoch.
-    dev = random.Random(args.seed).sample(calib, min(args.dev_size, len(calib)))
+    if args.train_fraction < 1.0:
+        train = random.Random(args.seed).sample(train, round(args.train_fraction * len(train)))
+    dev_path = Path(args.data) / "dev.jsonl"
+    if dev_path.exists():
+        # Clean protocol: dev comes from the training pool; calib is never touched here.
+        dev, dev_source = read_jsonl(dev_path), "dev.jsonl (from train pool)"
+    else:
+        # Legacy v1.0 protocol: dev loss on a slice of calib (only selects the best epoch).
+        print("WARNING: no dev.jsonl - selecting the epoch on a slice of calib.jsonl (legacy)")
+        calib = read_jsonl(Path(args.data) / "calib.jsonl")
+        dev = random.Random(args.seed).sample(calib, min(args.dev_size, len(calib)))
+        dev_source = "calib slice (legacy)"
     # Group by option count so each group's logits stack into one tensor.
     dev_by_k = {}
     for ex in dev:
@@ -105,6 +124,9 @@ def main():
                 "schema_version": SCHEMA_VERSION,
                 "decisions": {k: list(v.options) for k, v in DECISIONS.items()},
                 "epochs_trained": epoch + 1, "dev_nll": nll,
+                "seed": args.seed, "dev_source": dev_source, "n_train": len(train),
+                "train_fraction": args.train_fraction, "lr": args.lr,
+                "epochs_max": args.epochs, "batch_size": args.batch_size,
             }, indent=2))
             print(f"  saved to {out}")
 

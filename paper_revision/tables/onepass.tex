@@ -1,0 +1,16 @@
+\begin{tabular}{lcccccc}
+\toprule
+& \multicolumn{2}{c}{\textbf{K-pass (CaliDec)}} & \multicolumn{2}{c}{\textbf{1-pass}} & & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+\textbf{Decision} & Test & Held-out & Test & Held-out & $\Delta_{\text{test}}$ & McNemar $p$ \\
+\midrule
+relevance & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} \\
+sufficient & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} \\
+grounded & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} \\
+\midrule
+ECE$_{\mathrm{cal}}$ (test, rel/suf/grd) & \multicolumn{2}{c}{\ph{--} / \ph{--} / \ph{--}} & \multicolumn{2}{c}{\ph{--} / \ph{--} / \ph{--}} & & \\
+GPU ms/decision (rel/suf/grd) & \multicolumn{2}{c}{\ph{--} / \ph{--} / \ph{--}} & \multicolumn{2}{c}{\ph{--} / \ph{--} / \ph{--}} & & \\
+Option-order invariant & \multicolumn{2}{c}{yes} & \multicolumn{2}{c}{no} & & \\
+Unseen option sets & \multicolumn{2}{c}{yes (Sec.~\ref{sec:custom})} & \multicolumn{2}{c}{no (retrain)} & & \\
+\bottomrule
+\end{tabular}

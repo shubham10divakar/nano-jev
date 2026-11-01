@@ -1,0 +1,14 @@
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Task} & $K$ & \textbf{Random} & \textbf{v0.1} & \textbf{v1.0} & \textbf{CaliDec (rev.)} & \textbf{Qwen3-4B} \\
+\midrule
+AG News & 4 & 0.250 & 0.396 & 0.186 & \ph{--} & \ph{--} \\
+Yahoo Answers & 10 & 0.100 & 0.239 & 0.056 & \ph{--} & \ph{--} \\
+Emotion & 6 & 0.167 & 0.334 & 0.138 & \ph{--} & \ph{--} \\
+\midrule
+\multicolumn{7}{l}{\textit{Supervised reference: linear probe on frozen 1-pass encoder, 300 labels}} \\
+AG News (probe) & 4 & & & & \ph{--} &  \\
+Yahoo Answers (probe) & 10 & & & & \ph{--} &  \\
+Emotion (probe) & 6 & & & & \ph{--} &  \\
+\bottomrule
+\end{tabular}

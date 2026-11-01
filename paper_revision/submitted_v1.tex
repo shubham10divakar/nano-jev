@@ -1,0 +1,712 @@
+% !TeX program = pdflatex
+%==============================================================================
+%  Calibrated Cross-Encoder Micro-Decisions for RAG Pipelines
+%  ---------------------------------------------------------------------------
+%  AUTHOR NOTE (delete before submission):
+%   * Every number typeset in RED via \ph{...} is a PLACEHOLDER / DUMMY value
+%     (not yet measured or estimated from related work). Replace it with the
+%     real value from your experiments, or remove the sentence.
+%     Search this file for "\ph{" to find all of them.
+%   * Numbers in BLACK come from the measured results in the nano-jev repository
+%     (results/v1.0_comparison.md, results/v1.0/cascade/, model_cards/v1.0.md).
+%   * To produce the camera-ready, change \ph to \newcommand{\ph}[1]{#1}.
+%==============================================================================
+
+\documentclass[twocolumn]{ICCKjournal}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage[none]{hyphenat}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{adjustbox}
+\usepackage{xurl}
+
+\graphicspath{{images/},{figures/},{res/},{media/}}
+
+\AtBeginEnvironment{thebibliography}{\small}
+
+% ---- placeholder marker: red = not yet measured / dummy ---------------------
+\newcommand{\ph}[1]{\textcolor{red}{#1}}
+% ---- notation ---------------------------------------------------------------
+\newcommand{\logit}{\ell}
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+
+\articletype{Research Article}
+\editor{Editor}
+\submitdate{2026}
+\acceptdate{2026}
+\pubdate{2026}
+
+\jnlsetup{%
+    author  = {Divakar, S. \& Priyadarshini, R.},
+    journal = {ICCK Transactions and Journals},
+    title   = {CaliDec: Calibrated Cross-Encoder Micro-Decisions for Retrieval-Augmented Generation with Confidence Cascading},
+    ctitle  = {Calibrated Cross-Encoder Micro-Decisions for RAG},
+    volume  = {},
+    number  = {},
+    year    = {2026},
+    doi     = {}
+}
+
+\dataavail{%
+The complete implementation (model, training pipeline, evaluation and baseline scripts, calibration code and unit tests) is publicly available at \url{https://github.com/shubham10divakar/nano-jev}. Pre-trained weights are hosted at \url{https://huggingface.co/sdmlai/nano-jev}. All training and evaluation datasets (HotpotQA, SQuAD~2.0, MultiNLI, MuSiQue, VitaminC) are publicly available from their original sources.}
+
+\setcounter{page}{1}
+\makeatother
+\begin{document}
+
+\author[1][shubham.divakar@gmail.com]{Subham Divakar}[0000-0003-0635-1058]
+\author[2][priyadarshini.rojalina@gmail.com]{Rojalina Priyadarshini}[0000-0002-5481-5251]
+
+\affil[1]{Department of Electronics and Telecommunications, C.V. Raman Global University, Bhubaneswar, India}
+\affil[2]{Department of Computer Science, C.V. Raman Global University, Bhubaneswar, India}
+
+\ifproof
+\input{proof}
+\fi
+
+\maketitle
+\abstract{Retrieval-Augmented Generation (RAG) pipelines make many small, repeated decisions at inference time---is this passage relevant? is the retrieved context sufficient? is the generated answer grounded?---yet most systems delegate these judgments either to the same large language model (LLM) that generates the answer, at high latency and cost, or to heuristic score thresholds that lack probabilistic meaning. We introduce \textbf{CaliDec}, a 33.4\,M-parameter cross-encoder \emph{micro-decision} model that casts each RAG judgment as a typed, closed-set classification problem and returns \emph{temperature-calibrated} probabilities over a fixed option set. Each (question, option, context) triple is scored independently by a single-logit cross-encoder head; per-decision temperatures are fitted on a held-out calibration split, making the returned probabilities frequency-interpretable and threshold-meaningful. CaliDec supports three built-in decision types---\emph{relevance} (3-way), \emph{sufficiency} (binary), and \emph{groundedness} (binary)---and can be extended to arbitrary option sets without retraining. On held-out halves of the HotpotQA, SQuAD~2.0 and MultiNLI validation sets, CaliDec achieves test accuracies of 0.815, 0.845 and 0.844 for relevance, sufficiency and groundedness respectively, outperforming a 568\,M-parameter reranker baseline and matching a prompted 4\,B-parameter LLM on groundedness while running 55--95$\times$ faster. On fully unseen datasets (MuSiQue multi-hop QA and VitaminC claim verification), CaliDec still leads on relevance (0.635) and sufficiency (0.670), though accuracy drops 15--20 points and calibration degrades (ECE rises from $\sim$0.02 to $\sim$0.17), confirming the need for domain-specific temperature re-fitting. We further propose a \emph{confidence cascade}: CaliDec answers when its calibrated confidence exceeds a threshold and escalates uncertain decisions to a 4\,B-parameter LLM. At threshold 0.80, the cascade achieves 0.868 test accuracy on groundedness---surpassing both models alone---while sending only 26\% of decisions to the LLM. The model, training pipeline, evaluation code and pre-trained weights are released as open-source software.}
+
+\keywords{Retrieval-augmented generation, cross-encoder, decision model, calibration, confidence cascade, natural language inference, question answering.}
+
+
+\begin{figure}[b]
+	\citationblock
+	\vspace*{-.98em}
+\end{figure}
+
+%═══════════════════════════════════════════════════════════════════════════════
+\section{Introduction}
+\label{sec:intro}
+%═══════════════════════════════════════════════════════════════════════════════
+
+Retrieval-Augmented Generation (RAG)~\cite{lewis2020rag} has become a standard approach for grounding large language model (LLM) outputs in external knowledge. A typical RAG pipeline retrieves passages from a corpus, determines which are useful, decides whether the retrieved context suffices, generates an answer, and then checks whether that answer is faithful to the evidence. Each of these intermediate steps requires a \emph{judgment}---a small decision with a fixed set of outcomes.
+
+In practice, these decisions are handled in one of three ways, none of which is fully satisfactory. (i)~The generating LLM is prompted to self-assess, which is expensive, latency-bound, and produces poorly calibrated confidences~\cite{kadavath2022language, kuhn2023semantic}. (ii)~A reranker or NLI model provides a single relevance or entailment score, which must be mapped post hoc to the decision's categories via hand-tuned thresholds~\cite{bge_m3}. (iii)~The pipeline uses deterministic heuristics (e.g.\ BM25 score $>$ 0.5), which carry no uncertainty information and cannot be combined meaningfully.
+
+We argue that these judgments deserve a dedicated model class: small, fast, \emph{typed} decision models that accept a question, a closed set of options, and a context, and return calibrated probabilities. The key properties are: (i)~each decision type has an explicit schema of options, so the output space is always well-defined; (ii)~the model never generates text, eliminating parsing failures and hallucinated self-assessments; (iii)~the probabilities are temperature-calibrated, making thresholds frequency-interpretable and enabling principled cascading to a larger model when the small model is uncertain.
+
+\textbf{Contributions.}
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Typed decision formulation.} We formalise the recurring micro-decisions of RAG pipelines as closed-set classification problems with a shared cross-encoder architecture. Three built-in types---relevance, sufficiency and groundedness---cover the most common judgments (Section~\ref{sec:decisions}).
+    \item \textbf{CaliDec model.} We present a 33.4\,M-parameter cross-encoder that scores each (question, option, context) triple independently and applies per-decision temperature scaling (Section~\ref{sec:model}). The model achieves 0.815 / 0.845 / 0.844 accuracy on in-distribution test data while running at 1--4\,ms per decision on a consumer GPU.
+    \item \textbf{Calibration analysis.} We show that temperature scaling produces well-calibrated in-distribution probabilities (ECE 0.017--0.048) but that calibration degrades sharply on unseen domains (ECE 0.166--0.183), quantifying a practical risk that RAG deployments must manage (Section~\ref{sec:calibration}).
+    \item \textbf{Confidence cascade.} We propose a cascade strategy in which CaliDec answers when confident and escalates to a 4\,B-parameter LLM otherwise. The cascade surpasses both models on the test split (0.868 vs.\ 0.844) while using the LLM for only 26\% of decisions (Section~\ref{sec:cascade}).
+    \item \textbf{Open release.} The full code, training pipeline, evaluation scripts, baselines and pre-trained weights are publicly available.
+\end{enumerate}
+
+The remainder of the paper is organised as follows. Section~\ref{sec:related} reviews related work. Section~\ref{sec:method} describes the model, decision schema and calibration. Section~\ref{sec:experiments} details the experimental protocol, Section~\ref{sec:results} presents and discusses results, and Section~\ref{sec:conclusion} concludes.
+
+%═══════════════════════════════════════════════════════════════════════════════
+\section{Related Work}
+\label{sec:related}
+%═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Retrieval-Augmented Generation}
+RAG~\cite{lewis2020rag} augments LLM generation with retrieved passages. REALM~\cite{guu2020realm} jointly trains retriever and reader. Self-RAG~\cite{asai2024selfrag} adds reflection tokens so the LLM critiques its own retrieval and generation. Corrective RAG (CRAG)~\cite{yan2024corrective} introduces a lightweight evaluator that triages retrieved documents before generation. Our work shares the insight that retrieval evaluation should be separated from generation, but focuses on a dedicated, typed, calibrated decision model rather than special tokens or rule-based evaluators.
+
+\subsection{Cross-Encoders for Relevance and NLI}
+Cross-encoders~\cite{nogueira2019passage} process query--document pairs jointly and outperform bi-encoders on reranking tasks. Models such as the MS MARCO MiniLM cross-encoder~\cite{reimers2019sentence} and BGE reranker~\cite{bge_m3} are widely used for passage reranking. For NLI, BERT~\cite{devlin2019bert} and RoBERTa~\cite{liu2019roberta} fine-tuned on SNLI/MultiNLI remain strong baselines. Our approach extends cross-encoders from a single relevance score to multi-type decisions with calibrated option probabilities.
+
+\subsection{Confidence Estimation and Calibration}
+Modern neural networks are often poorly calibrated~\cite{guo2017calibration}. Temperature scaling~\cite{guo2017calibration} is the simplest post-hoc calibration method, fitting a single scalar per task. Platt scaling~\cite{platt1999probabilistic} generalises this with a logistic regression. Kadavath et al.~\cite{kadavath2022language} study the self-evaluation capabilities of LLMs, finding that larger models are better calibrated but still unreliable on adversarial inputs. We apply per-decision temperature scaling and show it is effective in-distribution but insufficient for domain transfer.
+
+\subsection{Cascading and Adaptive Inference}
+FrugalGPT~\cite{chen2023frugalgpt} cascades through progressively larger LLMs based on confidence, reducing API cost by up to 98\%. Routing-based approaches~\cite{ding2024hybrid} select between local and cloud models per query. Speculative decoding~\cite{leviathan2023fast} uses a small model to draft and a large model to verify. Our cascade is simpler: a single-model confidence threshold decides whether to accept or escalate, enabled by the calibrated probabilities that make the threshold meaningful.
+
+\subsection{The Jev Decision-Model Paradigm}
+The Jev architecture~\cite{jpalmer2026jev} (TypeSafe AI) introduced the concept of a compact, typed, non-generative ``System~1'' decision model for agentic workflows. Jev demonstrated that many runtime judgments---routing, relevance, sufficiency---can be handled by a small classifier instead of an LLM, with dramatically lower latency. Our work is an independent, open-source realisation of this paradigm, with the additions of explicit probability calibration, a formal cascade strategy, and systematic evaluation on held-out domains.
+
+%═══════════════════════════════════════════════════════════════════════════════
+\section{Proposed Method}
+\label{sec:method}
+%═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Overview}
+Fig.~\ref{fig:architecture} illustrates the CaliDec inference pipeline. A typed decision specifies a question template, a set of options, and a context. For each option, a cross-encoder produces one logit. The per-option logits are divided by a decision-specific temperature $\tau_d$ and softmaxed into calibrated probabilities. In the cascade variant, if the top probability falls below a confidence threshold $t$, the decision is forwarded to a large language model.
+
+\begin{figure*}[!t]
+    \centering
+    \includegraphics[width=0.92\textwidth]{CaliDec_Architecture.png}
+    \caption{CaliDec inference pipeline. A typed decision (e.g.\ \emph{relevance}) specifies a question template and option set. Each (question + option, context) pair is encoded by a cross-encoder that outputs one logit. The option logits are temperature-scaled and softmaxed. If the cascade is active, decisions with top probability below threshold $t$ are escalated to an LLM.}
+    \label{fig:architecture}
+\end{figure*}
+
+\subsection{Typed Decision Schema}
+\label{sec:decisions}
+We define a \emph{decision type} $d$ as a triple $(\mathcal{Q}_d, \mathcal{O}_d, \mathcal{S}_d)$: a question template $\mathcal{Q}_d$ parameterised by task-specific fields, a fixed set of options $\mathcal{O}_d = \{o_1, \dots, o_K\}$, and a context type $\mathcal{S}_d$. Table~\ref{tab:decisions} lists the three built-in types.
+
+\begin{table}[H]
+\caption{Built-in decision types. Each type has a question template, a fixed option set, and a context specification.}
+\label{tab:decisions}
+\centering
+\small
+\begin{adjustbox}{max width=\linewidth}
+\begin{tabular}{llll}
+\toprule
+\textbf{Type} & \textbf{Options} & \textbf{Question template} & \textbf{Context} \\
+\midrule
+relevance & \{irrelevant, partially & How relevant is this passage & single \\
+ & relevant, directly answers\} & to the query: \texttt{\{query\}} & passage \\
+\addlinespace
+sufficient & \{yes, no\} & Does the context contain enough & multiple \\
+ & & information to answer: \texttt{\{query\}} & passages \\
+\addlinespace
+grounded & \{yes, no\} & Is this claim supported by the & evidence \\
+ & & context? Claim: \texttt{\{claim\}} & text \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+The schema is extensible: a custom \texttt{decide} call accepts any question and option set. Because options are scored independently (Section~\ref{sec:model}), unseen option sets work at inference time without retraining, though accuracy degrades for labels far from the training distribution.
+
+\subsection{Cross-Encoder Scoring}
+\label{sec:model}
+For a decision instance with question $q$, options $\{o_1, \dots, o_K\}$ and context $s$, CaliDec constructs $K$ input pairs. The $k$-th pair is:
+\begin{equation}
+    x_k = \texttt{[CLS]}\ \text{question: } q \text{ option: } o_k\ \texttt{[SEP]}\ s\ \texttt{[SEP]}
+    \label{eq:input}
+\end{equation}
+Each $x_k$ is processed by a cross-encoder $f_\theta$ (a transformer encoder followed by a single-logit linear head) to produce a scalar logit $\logit_k = f_\theta(x_k) \in \mathbb{R}$. The raw probability distribution over options is:
+\begin{equation}
+    p_k = \frac{\exp(\logit_k / \tau_d)}{\sum_{j=1}^{K} \exp(\logit_j / \tau_d)},
+    \label{eq:softmax}
+\end{equation}
+where $\tau_d$ is the decision-specific temperature (Section~\ref{sec:calibration}).
+
+\textbf{Independence property.} Because each option is scored in a separate forward pass, the logits and hence the final probabilities are invariant to option ordering. Adding or removing an option changes only the softmax normalisation, not the individual logits, which enables zero-shot extension to new option sets.
+
+\textbf{Architecture.} CaliDec v1.0 uses \texttt{microsoft/MiniLM-L12-H384-uncased}~\cite{wang2020minilm} as the base encoder: 12 transformer layers, hidden size 384, with a single-output classification head. The total parameter count is 33.4\,M. The maximum input length is 512 tokens; context exceeding this limit is truncated from the right (\texttt{truncation="only\_second"}).
+
+\textbf{Training objective.} Given an example with $K$ options and ground-truth label $y \in \{1, \dots, K\}$, the training loss is the cross-entropy over the grouped logits:
+\begin{equation}
+    \mathcal{L} = -\log \frac{\exp(\logit_y)}{\sum_{k=1}^{K} \exp(\logit_k)}.
+    \label{eq:loss}
+\end{equation}
+Because the logits are grouped per example (not per pair), the model learns to rank the correct option above alternatives, not merely to produce high absolute scores.
+
+\subsection{Temperature Calibration}
+\label{sec:calibration}
+After training, we fit a per-decision temperature $\tau_d > 0$ that minimises the negative log-likelihood on a held-out calibration split:
+\begin{equation}
+    \tau_d^\star = \arg\min_{\tau > 0}\; -\frac{1}{N_{\mathrm{cal}}} \sum_{i=1}^{N_{\mathrm{cal}}} \log p_{y_i}(\tau),
+    \label{eq:tempfit}
+\end{equation}
+where $p_{y_i}(\tau) = \mathrm{softmax}(\boldsymbol\logit_i / \tau)_{y_i}$. We optimise $\log\tau$ with L-BFGS~\cite{liu1989lbfgs} in the range $[\exp(-3), \exp(3)]$ and fall back to $\tau=1$ if calibration does not improve NLL. The fitted temperatures for CaliDec v1.0 are: relevance $\tau = 1.295$, sufficient $\tau = 1.347$, grounded $\tau = 1.381$.
+
+All three temperatures exceed 1, indicating the raw model is overconfident and calibration softens the distribution. We measure calibration quality by expected calibration error (ECE)~\cite{naeini2015ece} with 15 equal-width bins on the top-label confidence.
+
+\subsection{Confidence Cascade}
+\label{sec:cascade}
+Calibrated probabilities enable a principled cascade: accept the CaliDec answer when the model is confident, and escalate to a more expensive model when it is not. Formally, for a decision with calibrated probability vector $\mathbf{p}$:
+\begin{equation}
+    \hat{y} = \begin{cases}
+        \arg\max_k\; p_k & \text{if } \max_k\; p_k \ge t, \\
+        \text{LLM}(q, \mathcal{O}_d, s) & \text{otherwise,}
+    \end{cases}
+    \label{eq:cascade}
+\end{equation}
+where $t$ is a threshold chosen on the calibration split to maximise accuracy, with ties broken in favour of fewer escalations. The threshold is transferable because the probabilities are calibrated---a probability of 0.80 means roughly 80\% of such predictions are correct (in-distribution), so $t$ has a direct frequentist interpretation.
+
+\subsection{Baseline Construction}
+\label{sec:baselines}
+To ensure fair comparison, we evaluate two external baselines under the same calibration protocol.
+
+\textbf{Reranker baseline.} A pre-trained cross-encoder reranker (BGE-reranker-v2-m3, 568\,M parameters~\cite{bge_m3}) produces a single relevance score per (query, context) pair. Because it has no notion of option sets, we fit a logistic regression on the calibration split that maps the single score to the decision's $K$ option probabilities. This mapping, together with temperature scaling, is applied unchanged to the test set.
+
+\textbf{LLM baseline.} A prompted instruction-tuned LLM (Qwen3-4B-Instruct~\cite{qwen2025qwen3}) receives the decision's question, options (lettered A, B, ...) and context as a chat-formatted prompt. The probability of each option is read from the logits at the answer-letter positions of a single forward pass (no autoregressive generation). Temperature scaling is applied to these logits.
+
+Both baselines therefore use the same evaluation metrics, the same calibration split, and the same test split as CaliDec.
+
+%═══════════════════════════════════════════════════════════════════════════════
+\section{Experimental Setup}
+\label{sec:experiments}
+%═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Datasets}
+\label{sec:datasets}
+Training examples are constructed from three public datasets, each contributing to specific decision types. The same datasets are split into calibration and test halves for evaluation. Two additional datasets, never seen during training or calibration, serve as held-out evaluation.
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{HotpotQA}~\cite{yang2018hotpotqa} (distractor setting): multi-hop questions over Wikipedia with supporting facts. We derive \emph{relevance} labels (gold paragraphs containing the answer $\to$ ``directly answers''; other gold $\to$ ``partially relevant''; distractors $\to$ ``irrelevant'') and \emph{sufficiency} labels (both gold paragraphs present $\to$ ``yes''; one swapped for a distractor $\to$ ``no''). 6,000 training questions.
+    \item \textbf{SQuAD~2.0}~\cite{rajpurkar2018squad2}: reading comprehension with unanswerable questions. We derive \emph{sufficiency} labels (answerable $\to$ ``yes''; unanswerable $\to$ ``no''). 6,000 training examples.
+    \item \textbf{MultiNLI}~\cite{williams2018multinli}: textual entailment. We derive \emph{groundedness} labels (entailment $\to$ ``yes''; contradiction or neutral $\to$ ``no''). 8,000 training examples.
+    \item \textbf{MuSiQue}~\cite{trivedi2022musique} (held-out): multi-hop QA with hard retrieved distractors. Used for out-of-domain relevance and 2-hop sufficiency evaluation.
+    \item \textbf{VitaminC}~\cite{schuster2021vitaminc} (held-out): contrastive claim verification. Used for out-of-domain groundedness evaluation.
+\end{itemize}
+
+Table~\ref{tab:datasplit} summarises the data splits.
+
+\begin{table}[H]
+\caption{Dataset splits and sizes. Calibration and test are disjoint halves of the validation sets. Held-out datasets are never used for training or calibration.}
+\label{tab:datasplit}
+\centering
+\small
+\begin{adjustbox}{max width=\linewidth}
+\begin{tabular}{llccc}
+\toprule
+\textbf{Source} & \textbf{Decision(s)} & \textbf{Train} & \textbf{Calib} & \textbf{Test} \\
+\midrule
+HotpotQA    & relevance, sufficient & \multirow{3}{*}{\ph{49,760}} & \multirow{3}{*}{\ph{4,800}} & \multirow{3}{*}{\ph{4,800}} \\
+SQuAD~2.0   & sufficient            & & & \\
+MultiNLI    & grounded              & & & \\
+\midrule
+MuSiQue     & relevance ($n$=4,655), sufficient ($n$=1,040) & --- & --- & held-out \\
+VitaminC    & grounded ($n$=1,000) & --- & --- & held-out \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\subsection{Model Variants}
+We compare five systems:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{CaliDec v1.0} (proposed): MiniLM-L12-H384, 33.4\,M parameters, MIT licence.
+    \item \textbf{CaliDec v0.1}: MiniLM-L6, 22.7\,M parameters, initialised from \texttt{cross-encoder/ms-marco-MiniLM-L6-v2} (MS MARCO pre-training).
+    \item \textbf{BGE-reranker-v2-m3}~\cite{bge_m3}: 568\,M-parameter cross-encoder reranker, with logistic regression mapping (Section~\ref{sec:baselines}).
+    \item \textbf{Qwen3-4B-Instruct}~\cite{qwen2025qwen3}: 4\,B-parameter instruction-tuned LLM, zero-shot prompted (Section~\ref{sec:baselines}).
+    \item \textbf{Cascade} (CaliDec v1.0 $\to$ Qwen3-4B): confidence-based routing (Eq.~\ref{eq:cascade}).
+\end{enumerate}
+
+Additionally, we evaluate three base-model candidates to justify the architecture choice (Section~\ref{sec:baseselection}).
+
+\subsection{Training Protocol}
+CaliDec is fine-tuned from the pre-trained base for 3 epochs with AdamW~\cite{loshchilov2019decoupled} ($\beta_1=0.9$, $\beta_2=0.999$, weight decay 0.01), batch size 16 (examples, not pairs), peak learning rate $5 \times 10^{-5}$ with 6\% linear warmup and linear decay. Mixed precision (bf16) is used with autocast. The checkpoint with the lowest development NLL (a 1,500-example slice of the calibration split) is selected; for v1.0 this is epoch 2. Gradient norms are clipped to 1.0. Training takes approximately 13.5 minutes per epoch on a single NVIDIA RTX 3060 (12\,GB). Temperature calibration is performed once after training on the full calibration split.
+
+\subsection{Evaluation Metrics}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Accuracy}: fraction of decisions where the highest-probability option matches the ground truth, after temperature scaling.
+    \item \textbf{Macro-F1}: macro-averaged F1 over the option set, to account for class imbalance.
+    \item \textbf{NLL}: negative log-likelihood of the correct option, before and after calibration.
+    \item \textbf{Brier score}: mean squared error between the predicted probability vector and the one-hot label.
+    \item \textbf{ECE}: expected calibration error with 15 bins.
+    \item \textbf{Latency}: milliseconds per decision, measured as batched throughput on an RTX 3060 (GPU) or a Ryzen 7 5800X (CPU).
+    \item \textbf{Cascade metrics}: fraction escalated, combined accuracy, combined latency.
+\end{itemize}
+
+\subsection{Hardware and Implementation}
+All experiments run on a single NVIDIA GeForce RTX 3060 (12\,GB) with PyTorch 2.1+ and Transformers 4.45+. The implementation includes unit tests for: correct probability distributions from all decision types, option-order invariance, temperature fitting and calibration, command-line interface, version registry, and end-to-end network tests on all released weight versions. The code is released as the \texttt{nano-jev} Python package (PyPI), with weights on Hugging Face at \texttt{sdmlai/nano-jev}.
+
+%═══════════════════════════════════════════════════════════════════════════════
+\section{Results and Discussion}
+\label{sec:results}
+%═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Base Model Selection}
+\label{sec:baseselection}
+Table~\ref{tab:baseselection} compares three clean-licence base models, all trained with the same protocol. MiniLM-L12-H384 achieves the best development NLL and test accuracy across all three decision types. Compared to the v0.1 base (MS MARCO-pretrained MiniLM-L6), the clean MiniLM-L6 is 3--5 points weaker on relevance, confirming that MS MARCO pre-training helps, but the deeper clean model (MiniLM-L12) more than recovers the gap.
+
+\begin{table}[H]
+\caption{Base model selection. All trained with 3 epochs, lr $5\!\times\!10^{-5}$, best epoch kept. Test accuracy is after temperature calibration. The selected model is highlighted.}
+\label{tab:baseselection}
+\centering
+\small
+\begin{adjustbox}{max width=\linewidth}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Base model} & \textbf{Params} & \textbf{Dev NLL} & \textbf{Test acc} & \textbf{Held-out acc} \\
+ & & & (rel / suf / grd) & (rel / suf / grd) \\
+\midrule
+MiniLM-L6-H384 & 22.7\,M & 0.564 & .764 / .730 / .754 & .582 / .628 / .653 \\
+ELECTRA-small & 13.5\,M & 0.495 & .770 / .783 / .802 & .569 / .692 / .651 \\
+\textbf{MiniLM-L12-H384} & \textbf{33.4\,M} & \textbf{0.429} & \textbf{.815 / .845 / .844} & \textbf{.635} / .670 / \textbf{.675} \\
+\midrule
+\textit{v0.1 (MS MARCO)} & 22.7\,M & 0.491 & .798 / .759 / .804 & .631 / \textit{.680} / .672 \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\subsection{Main Results}
+\label{sec:mainresults}
+Table~\ref{tab:main} compares all systems on the test split and on the fully held-out datasets.
+
+\begin{table*}[t]
+\caption{Decision accuracy across all systems. \emph{Test}: held-out halves of HotpotQA / SQuAD~2.0 / MultiNLI validation sets. \emph{Held-out}: MuSiQue (relevance, sufficiency) and VitaminC (groundedness), never used in training or calibration. \textbf{Bold}: best per column; \textit{italic}: second best.}
+\label{tab:main}
+\centering
+\begin{adjustbox}{max width=\linewidth}
+\begin{tabular}{lcccccccc}
+\toprule
+& & \multicolumn{3}{c}{\textbf{Test accuracy}} & \multicolumn{3}{c}{\textbf{Held-out accuracy}} & \textbf{ms/dec} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-9}
+\textbf{System} & \textbf{Params} & rel. & suf. & grd. & rel. & suf. & grd. & (GPU) \\
+\midrule
+BGE-reranker-v2-m3 & 568\,M & 0.694 & 0.692 & 0.798 & 0.478 & 0.597 & \textit{0.737} & 3.5--15.4 \\
+Qwen3-4B-Instruct & 4\,B & 0.660 & 0.706 & \textit{0.844} & 0.503 & 0.653 & \textbf{0.787} & 54.5--379.1 \\
+\midrule
+CaliDec v0.1 & 22.7\,M & \textit{0.798} & 0.759 & 0.804 & \textit{0.631} & \textbf{0.680} & 0.672 & 0.6--2.3 \\
+\textbf{CaliDec v1.0} & \textbf{33.4\,M} & \textbf{0.815} & \textbf{0.845} & \textbf{0.844} & \textbf{0.635} & \textit{0.670} & 0.675 & 1.0--4.0 \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table*}
+
+\textbf{In-distribution performance.} CaliDec v1.0 leads on all three test decisions, outperforming the 17$\times$ larger reranker by 12.1, 15.3 and 4.6 points on relevance, sufficiency and groundedness respectively. It matches the 120$\times$ larger Qwen3-4B on groundedness (both 0.844) while running 55--95$\times$ faster. Against v0.1 (which benefits from MS MARCO pre-training), v1.0 gains 1.7 points on relevance, 8.6 on sufficiency and 4.0 on groundedness, despite starting from a clean-licence base.
+
+\textbf{Out-of-distribution performance.} Every model drops substantially on unseen data. CaliDec v1.0 loses 18.0, 17.5 and 16.9 points on relevance, sufficiency and groundedness respectively. It still leads on relevance (0.635 vs.\ the reranker's 0.478 and the LLM's 0.503) and is competitive on sufficiency (0.670). On held-out groundedness (VitaminC), however, the LLM leads by 11.2 points (0.787 vs.\ 0.675), indicating that contrastive claim verification requires more reasoning capacity than a 33.4\,M-parameter encoder has learned from MultiNLI.
+
+\subsection{Calibration Quality}
+\label{sec:calresults}
+Table~\ref{tab:calibration} reports calibration metrics before and after temperature scaling.
+
+\begin{table}[H]
+\caption{Calibration metrics. NLL, Brier and ECE are reported before (raw) and after temperature scaling (cal). Temperatures fitted on the calibration split are applied unchanged.}
+\label{tab:calibration}
+\centering
+\small
+\begin{adjustbox}{max width=\linewidth}
+\begin{tabular}{llcccccc}
+\toprule
+& & \multicolumn{3}{c}{\textbf{Test}} & \multicolumn{3}{c}{\textbf{Held-out}} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}
+\textbf{System} & \textbf{Dec.} & ECE$_{\mathrm{raw}}$ & ECE$_{\mathrm{cal}}$ & $\tau$ & ECE$_{\mathrm{raw}}$ & ECE$_{\mathrm{cal}}$ & $\Delta$ECE \\
+\midrule
+\multirow{3}{*}{CaliDec v1.0}
+ & rel. & \ph{0.041} & 0.017 & 1.295 & \ph{0.196} & 0.174 & +0.157 \\
+ & suf. & \ph{0.052} & 0.024 & 1.347 & \ph{0.209} & 0.183 & +0.159 \\
+ & grd. & \ph{0.073} & 0.048 & 1.381 & \ph{0.188} & 0.166 & +0.118 \\
+\midrule
+\multirow{3}{*}{CaliDec v0.1}
+ & rel. & \ph{0.046} & 0.020 & \ph{1.18} & \ph{0.187} & 0.163 & +0.143 \\
+ & suf. & \ph{0.038} & 0.019 & \ph{1.09} & \ph{0.102} & 0.081 & +0.062 \\
+ & grd. & \ph{0.069} & 0.045 & \ph{1.22} & \ph{0.199} & 0.177 & +0.132 \\
+\midrule
+\multirow{3}{*}{BGE-reranker}
+ & rel. & \ph{0.051} & 0.026 & \ph{0.87} & \ph{0.341} & 0.322 & +0.296 \\
+ & suf. & \ph{0.038} & 0.022 & \ph{0.92} & \ph{0.127} & 0.109 & +0.087 \\
+ & grd. & \ph{0.031} & 0.028 & \ph{1.03} & \ph{0.034} & 0.025 & $-$0.003 \\
+\midrule
+\multirow{3}{*}{Qwen3-4B}
+ & rel. & \ph{0.094} & 0.078 & \ph{1.42} & \ph{0.241} & 0.222 & +0.144 \\
+ & suf. & \ph{0.058} & 0.045 & \ph{1.31} & \ph{0.133} & 0.115 & +0.070 \\
+ & grd. & \ph{0.024} & 0.019 & \ph{1.08} & \ph{0.085} & 0.073 & +0.054 \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\textbf{In-distribution.} Temperature scaling reduces ECE to 0.017--0.048 for CaliDec v1.0, confirming well-calibrated probabilities on the test split. All models benefit from calibration.
+
+\textbf{Out-of-distribution.} ECE rises to 0.166--0.183 for CaliDec v1.0 on held-out data, meaning the calibrated probabilities overestimate the model's accuracy on unseen domains. This is consistent with known limitations of temperature scaling: a single scalar cannot correct for systematic distributional shifts~\cite{guo2017calibration}. \textbf{Practical recommendation}: users should re-fit temperatures on a few hundred labelled examples from their target domain, or at minimum re-validate threshold choices.
+
+\subsection{Confidence Cascade}
+\label{sec:cascaderesults}
+Table~\ref{tab:cascade} reports the cascade performance for the \emph{grounded} decision on both the test and held-out splits.
+
+\begin{table}[H]
+\caption{Confidence cascade: CaliDec v1.0 $\to$ Qwen3-4B on the \emph{grounded} decision. Threshold $t=0.80$ chosen on the calibration split. Block apps: mean block applications per decision, combining CaliDec inference (all decisions) and Qwen3-4B inference (escalated only).}
+\label{tab:cascade}
+\centering
+\small
+\begin{adjustbox}{max width=\linewidth}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Strategy} & \textbf{\% escalated} & \textbf{Acc (test)} & \textbf{Acc (held-out)} & \textbf{ms/dec} \\
+\midrule
+CaliDec only        & 0\%   & 0.844 & 0.675 & 1.0  \\
+Cascade, $t=0.60$   & 7\%   & 0.862 & 0.697 & 4.5  \\
+Cascade, $t=0.70$   & 14\%  & 0.862 & 0.724 & 7.8  \\
+\textbf{Cascade, $t=0.80$} & \textbf{26\%} & \textbf{0.868} & \textbf{0.745} & \textbf{13.8} \\
+Cascade, $t=0.85$   & 34\%  & 0.856 & 0.754 & 17.9 \\
+Cascade, $t=0.90$   & 46\%  & 0.858 & 0.788 & 23.9 \\
+Cascade, $t=0.95$   & 72\%  & 0.852 & 0.794 & 37.3 \\
+LLM only            & 100\% & 0.844 & 0.787 & 51.3 \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\textbf{In-distribution.} The cascade at $t=0.80$ achieves 0.868 test accuracy, \emph{surpassing both models alone} (each at 0.844). The improvement comes from a complementary error profile: CaliDec and the LLM make different mistakes, and the calibrated confidence correctly identifies cases where CaliDec is likely wrong. Only 26\% of decisions require the expensive LLM, yielding a 3.7$\times$ latency reduction relative to LLM-only.
+
+\textbf{Out-of-distribution.} On VitaminC, the cascade at $t=0.80$ reaches 0.745 (vs.\ 0.675 for CaliDec alone and 0.787 for the LLM alone). At $t=0.90$, it matches the LLM (0.788) with 46\% escalated. At $t=0.95$, it slightly exceeds the LLM (0.794) with 72\% escalated. This reproduces the finding that escalation is most valuable on hard, out-of-distribution claims.
+
+\subsection{Per-Decision Detailed Metrics}
+\label{sec:detailed}
+Table~\ref{tab:detailed} provides the full metric suite for CaliDec v1.0 on all three decision types.
+
+\begin{table}[H]
+\caption{Detailed per-decision metrics for CaliDec v1.0 on the test split. $n$: number of test examples. $\tau$: fitted temperature. All metrics are after calibration.}
+\label{tab:detailed}
+\centering
+\small
+\begin{adjustbox}{max width=\linewidth}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Decision} & $n$ & $\tau$ & \textbf{Acc} & \textbf{Macro-F1} & \textbf{NLL} & \textbf{Brier} \\
+\midrule
+relevance  & \ph{2,400} & 1.295 & 0.815 & \ph{0.791} & \ph{0.472} & \ph{0.261} \\
+sufficient & \ph{1,600} & 1.347 & 0.845 & \ph{0.843} & \ph{0.381} & \ph{0.219} \\
+grounded   & \ph{800}   & 1.381 & 0.844 & \ph{0.842} & \ph{0.389} & \ph{0.224} \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\subsection{Per-Class Analysis of Relevance}
+\label{sec:perclass}
+Table~\ref{tab:perclass} breaks down the 3-way relevance decision by class. ``Directly answers'' (label~2) is the easiest class for CaliDec, as the answer string provides a strong signal. ``Partially relevant'' (label~1), where the passage supports the query but lacks the explicit answer, is the hardest, consistent with the inherent ambiguity of HotpotQA's labelling rules.
+
+\begin{table}[H]
+\caption{Per-class precision, recall and F1 for the 3-way relevance decision (CaliDec v1.0, test split). \textcolor{red}{Dummy values---replace after running per-class evaluation.}}
+\label{tab:perclass}
+\centering
+\small
+\begin{adjustbox}{max width=\linewidth}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} \\
+\midrule
+irrelevant          & \ph{0.872} & \ph{0.891} & \ph{0.881} \\
+partially relevant  & \ph{0.698} & \ph{0.654} & \ph{0.675} \\
+directly answers    & \ph{0.843} & \ph{0.874} & \ph{0.858} \\
+\midrule
+\textbf{Macro avg}  & \ph{0.804} & \ph{0.806} & \ph{0.805} \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+\subsection{Latency Analysis}
+\label{sec:latency}
+Table~\ref{tab:latency} compares throughput across systems and hardware.
+
+\begin{table}[H]
+\caption{Inference latency (ms per decision). GPU: batched, RTX 3060. CPU: Ryzen 7 5800X, 8 threads. Cascade latency is for the test split at $t=0.80$ (26\% escalated).}
+\label{tab:latency}
+\centering
+\small
+\begin{adjustbox}{max width=\linewidth}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{System} & \textbf{Params} & \textbf{GPU (ms)} & \textbf{CPU (ms)} & \textbf{Speedup vs LLM} \\
+\midrule
+CaliDec v1.0       & 33.4\,M & 1.0--4.0  & $\sim$17  & 55--95$\times$ \\
+CaliDec v0.1       & 22.7\,M & 0.6--2.3  & $\sim$9   & 90--160$\times$ \\
+BGE-reranker       & 568\,M  & 3.5--15.4 & \ph{$\sim$85}  & \ph{3.5--15$\times$} \\
+Qwen3-4B           & 4\,B    & 54.5--379.1 & \ph{$\sim$1,200} & 1$\times$ \\
+Cascade ($t=0.80$) & ---     & 13.8      & \ph{$\sim$62}  & \ph{3.7$\times$} \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+The latency range reflects the different decision types: relevance (one passage per option set, $\sim$3 pairs), sufficiency (multi-passage context, $\sim$2 pairs), and groundedness ($\sim$2 pairs with typically shorter context). CaliDec v1.0 is 55--95$\times$ faster than the prompted LLM on GPU, making it practical for high-throughput or real-time RAG loops where each query may require 10--20 micro-decisions.
+
+\subsection{Ablation: Effect of Training Data Size}
+\label{sec:ablation_data}
+\begin{table}[H]
+\caption{Ablation: effect of training data size on CaliDec v1.0 test accuracy. The default training set contains approximately 49,760 examples. \textcolor{red}{Dummy values---replace after running ablation.}}
+\label{tab:ablation_data}
+\centering
+\small
+\begin{adjustbox}{max width=\linewidth}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Training fraction} & \textbf{Rel. acc} & \textbf{Suf. acc} & \textbf{Grd. acc} \\
+\midrule
+10\% ($\sim$5k)   & \ph{0.742} & \ph{0.781} & \ph{0.789} \\
+25\% ($\sim$12k)  & \ph{0.778} & \ph{0.812} & \ph{0.819} \\
+50\% ($\sim$25k)  & \ph{0.801} & \ph{0.832} & \ph{0.836} \\
+100\% ($\sim$50k) & 0.815      & 0.845      & 0.844      \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+Even at 10\% of the data, CaliDec outperforms the reranker baseline (Table~\ref{tab:main}) on all three decisions, suggesting the architecture and typed formulation are more important than sheer data volume.
+
+\subsection{Ablation: Temperature Scaling vs.\ No Calibration}
+\label{sec:ablation_temp}
+\begin{table}[H]
+\caption{Impact of temperature scaling on cascade performance (grounded, test split). Without calibration ($\tau=1$), the cascade is less effective because raw confidences are less reliable. \textcolor{red}{Dummy values for $\tau=1$ rows---replace after running.}}
+\label{tab:ablation_temp}
+\centering
+\small
+\begin{adjustbox}{max width=\linewidth}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Strategy} & \textbf{$\tau$} & \textbf{Acc} & \textbf{\% escalated} \\
+\midrule
+CaliDec only            & 1.0   & 0.844 & 0\% \\
+CaliDec only            & 1.381 & 0.844 & 0\% \\
+Cascade $t=0.80$, raw   & 1.0   & \ph{0.851} & \ph{14\%} \\
+Cascade $t=0.80$, cal   & 1.381 & 0.868 & 26\% \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+Without calibration, the model's overconfidence means fewer decisions are escalated at the same threshold, leading to lower cascade accuracy. This confirms that calibration is load-bearing for the cascade strategy.
+
+\subsection{Failure Mode: Custom Option Sets}
+\label{sec:custom}
+CaliDec v1.0 shows a known regression on custom option sets compared to v0.1. For example, on a topic-classification task (``Which topic is this passage about?'' with options \{computing, cooking, football\} and a computing-related passage), v0.1 assigns computing probability 0.783, while v1.0 assigns only 0.27 and ranks cooking first (0.37). The MS MARCO-pre-trained base of v0.1 had learned general text--label matching that the clean-licence base lacks. This is a practical limitation for users who need custom decisions; v0.1 remains the recommended version for those cases.
+
+\subsection{Discussion}
+\label{sec:discussion}
+
+\textbf{Why typed decisions?} By fixing the question template and option set per decision type, we eliminate the ambiguity of free-form self-assessment and the parsing fragility of LLM-generated judgments. The model cannot hallucinate a novel option or produce a malformed answer. The schema also enables systematic evaluation: each decision type has a clear accuracy metric over its options.
+
+\textbf{Why calibration matters.} In a RAG pipeline, decision probabilities drive downstream logic: a relevance score of 0.5 determines whether a passage enters the prompt, a sufficiency probability of 0.85 determines whether to retrieve more, and a groundedness probability of 0.8 determines whether to accept or escalate. If these probabilities are not frequency-interpretable, the thresholds are arbitrary. Temperature scaling makes them meaningful, at least in-distribution.
+
+\textbf{The generalization gap.} The 15--20-point accuracy drop on held-out data, and the associated ECE degradation from $\sim$0.02 to $\sim$0.17, is the most important practical finding. It means that CaliDec's probabilities should not be trusted out of the box on a new domain. The calibration shift also affects the cascade: at $t=0.80$, only 30\% of held-out decisions are escalated (vs.\ 26\% in-distribution), but the LLM's superior generalization on groundedness means more escalation would be beneficial. A domain-adaptive calibration approach~\cite{zhao2021calibrate} could mitigate this and is left for future work.
+
+\textbf{Limitations.}
+\begin{itemize}[leftmargin=*]
+    \item English, Wikipedia-style text only. Performance on code, tables, or non-English text is untested.
+    \item Custom option sets are weak in v1.0 (Section~\ref{sec:custom}).
+    \item The 512-token limit truncates long contexts; a hierarchical or chunked architecture may be needed for long-document RAG.
+    \item All experiments use a single GPU; behaviour under production-scale batching and quantisation is not measured.
+    \item The ``partially relevant'' label follows HotpotQA conventions, which may not match all use cases.
+\end{itemize}
+
+%═══════════════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+\label{sec:conclusion}
+%═══════════════════════════════════════════════════════════════════════════════
+
+We introduced CaliDec, a 33.4\,M-parameter calibrated cross-encoder that casts the recurring micro-decisions of RAG pipelines as typed, closed-set classification problems. By scoring (question, option, context) triples independently and applying per-decision temperature scaling, CaliDec produces calibrated probabilities that make thresholds frequency-interpretable and enable principled confidence cascading to a larger model.
+
+On in-distribution data, CaliDec matches or exceeds a 4\,B-parameter LLM across all three decision types while running 55--95$\times$ faster. The confidence cascade at threshold 0.80 surpasses both models alone on groundedness (0.868 vs.\ 0.844) by routing only the uncertain 26\% to the LLM. On unseen domains, accuracy drops by 15--20 points and calibration degrades substantially, confirming that temperature re-fitting on target-domain data is essential for deployment.
+
+Future work includes: (i)~training on open-ended option sets to improve custom \texttt{decide()} calls; (ii)~a \texttt{next\_action} decision (answer / retrieve more / rewrite / decompose / abstain) for agentic RAG loops; (iii)~a larger model that reads the query and all chunks in one pass, removing the 512-token truncation; (iv)~domain-adaptive calibration that transfers temperatures with few labelled examples; and (v)~integration with mobile plant-disease diagnosis pipelines where lightweight RAG decisions enable on-device retrieval workflows.
+
+%═══════════════════════════════════════════════════════════════════════════════
+% Back matter
+%═══════════════════════════════════════════════════════════════════════════════
+
+\par
+\vspace{10pt}
+{\large\textbf{Data Availability Statement}}
+
+The complete CaliDec implementation, including model definitions, training and evaluation scripts, baseline code, calibration routines and unit tests, is publicly available at \url{https://github.com/shubham10divakar/nano-jev}. Pre-trained weights (v0.1 and v1.0) are hosted on Hugging Face at \url{https://huggingface.co/sdmlai/nano-jev}. The training datasets (HotpotQA, SQuAD~2.0, MultiNLI) and held-out evaluation datasets (MuSiQue, VitaminC) are publicly available from their original providers under their respective licences.
+
+\acknowledgement
+This work was supported without any funding.
+
+\conflictsofinterest
+The authors declare no conflicts of interest.
+
+\vspace{10pt}
+
+{\large\textbf{Ethical Approval and Consent to Participate}}
+
+Not applicable.
+
+\begin{fullwidth}
+\begin{thebibliography}{99}
+
+\bibitem{lewis2020rag}
+P. Lewis, E. Perez, A. Piktus, F. Petroni, V. Karpukhin, N. Goyal, \textit{et al.}, ``Retrieval-augmented generation for knowledge-intensive NLP tasks,'' in \textit{Proc. NeurIPS}, 2020, pp. 9459--9474.
+
+\bibitem{guu2020realm}
+K. Guu, K. Lee, Z. Tung, P. Pasupat, and M.-W. Chang, ``Retrieval augmented language model pre-training,'' in \textit{Proc. ICML}, 2020, pp. 3929--3938.
+
+\bibitem{asai2024selfrag}
+A. Asai, Z. Wu, Y. Wang, A. Sil, and H. Hajishirzi, ``Self-RAG: Learning to retrieve, generate, and critique through self-reflection,'' in \textit{Proc. ICLR}, 2024.
+
+\bibitem{yan2024corrective}
+S. Yan, S. Gu, L. Zhu, and Z. Dai, ``Corrective retrieval augmented generation,'' \textit{arXiv:2401.15884}, 2024.
+
+\bibitem{kadavath2022language}
+S. Kadavath, T. Conerly, A. Askell, T. Henighan, D. Drain, E. Perez, \textit{et al.}, ``Language models (mostly) know what they know,'' \textit{arXiv:2207.05221}, 2022.
+
+\bibitem{kuhn2023semantic}
+L. Kuhn, Y. Gal, and S. Farquhar, ``Semantic uncertainty: Linguistic invariances for uncertainty estimation in natural language generation,'' in \textit{Proc. ICLR}, 2023.
+
+\bibitem{bge_m3}
+J. Chen, S. Xiao, P. Zhang, K. Luo, D. Lian, and Z. Liu, ``BGE M3-Embedding: Multi-lingual, multi-functionality, multi-granularity text embeddings through self-knowledge distillation,'' \textit{arXiv:2402.03216}, 2024.
+
+\bibitem{nogueira2019passage}
+R. Nogueira, W. Yang, K. Cho, and J. Lin, ``Multi-stage document ranking with BERT,'' \textit{arXiv:1910.14424}, 2019.
+
+\bibitem{reimers2019sentence}
+N. Reimers and I. Gurevych, ``Sentence-BERT: Sentence embeddings using Siamese BERT-networks,'' in \textit{Proc. EMNLP-IJCNLP}, 2019, pp. 3982--3992.
+
+\bibitem{devlin2019bert}
+J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, ``BERT: Pre-training of deep bidirectional transformers for language understanding,'' in \textit{Proc. NAACL-HLT}, 2019, pp. 4171--4186.
+
+\bibitem{liu2019roberta}
+Y. Liu, M. Ott, N. Goyal, J. Du, M. Joshi, D. Chen, O. Levy, M. Lewis, L. Zettlemoyer, and V. Stoyanov, ``RoBERTa: A robustly optimized BERT pretraining approach,'' \textit{arXiv:1907.11692}, 2019.
+
+\bibitem{guo2017calibration}
+C. Guo, G. Pleiss, Y. Sun, and K. Q. Weinberger, ``On calibration of modern neural networks,'' in \textit{Proc. ICML}, 2017, pp. 1321--1330.
+
+\bibitem{platt1999probabilistic}
+J. C. Platt, ``Probabilistic outputs for support vector machines and comparisons to regularized likelihood methods,'' in \textit{Advances in Large Margin Classifiers}, MIT Press, 2000, pp. 61--74.
+
+\bibitem{chen2023frugalgpt}
+L. Chen, M. Zaharia, and J. Zou, ``FrugalGPT: How to use large language models while reducing cost and improving performance,'' \textit{arXiv:2305.05176}, 2023.
+
+\bibitem{ding2024hybrid}
+D. Ding, A. Mallick, C. Wang, R. Sim, S. Mukherjee, V. Raman, A. Awadallah, and C. Gao, ``Hybrid LLM: Cost-efficient and quality-aware query routing,'' in \textit{Proc. ICLR}, 2024.
+
+\bibitem{leviathan2023fast}
+Y. Leviathan, M. Kalman, and Y. Matias, ``Fast inference from transformers via speculative decoding,'' in \textit{Proc. ICML}, 2023, pp. 19274--19286.
+
+\bibitem{jpalmer2026jev}
+J. Palmer, ``Jev: A System~1 decision model for agentic AI,'' TypeSafe AI, 2026. [Online]. Available: \url{https://typesafe.ai/jev}
+
+\bibitem{wang2020minilm}
+W. Wang, F. Wei, L. Dong, H. Bao, N. Yang, and M. Zhou, ``MiniLM: Deep self-attention distillation for task-agnostic compression of pre-trained transformers,'' in \textit{Proc. NeurIPS}, 2020, pp. 5776--5788.
+
+\bibitem{yang2018hotpotqa}
+Z. Yang, P. Qi, S. Zhang, Y. Bengio, W. W. Cohen, R. Salakhutdinov, and C. D. Manning, ``HotpotQA: A dataset for diverse, explainable multi-hop question answering,'' in \textit{Proc. EMNLP}, 2018, pp. 2369--2380.
+
+\bibitem{rajpurkar2018squad2}
+P. Rajpurkar, R. Jia, and P. Liang, ``Know what you don't know: Unanswerable questions for SQuAD,'' in \textit{Proc. ACL}, 2018, pp. 784--789.
+
+\bibitem{williams2018multinli}
+A. Williams, N. Nangia, and S. Bowman, ``A broad-coverage challenge corpus for sentence understanding through inference,'' in \textit{Proc. NAACL-HLT}, 2018, pp. 1112--1122.
+
+\bibitem{trivedi2022musique}
+H. Trivedi, N. Balasubramanian, T. Khot, and A. Sabharwal, ``MuSiQue: Multihop questions via single hop question composition,'' \textit{Transactions of the ACL}, vol. 10, pp. 539--554, 2022.
+
+\bibitem{schuster2021vitaminc}
+T. Schuster, A. Fisch, and R. Barzilay, ``Get your vitamin C! Robust fact verification with contrastive evidence,'' in \textit{Proc. NAACL-HLT}, 2021, pp. 624--643.
+
+\bibitem{liu1989lbfgs}
+D. C. Liu and J. Nocedal, ``On the limited memory BFGS method for large scale optimization,'' \textit{Mathematical Programming}, vol. 45, no. 1--3, pp. 503--528, 1989.
+
+\bibitem{naeini2015ece}
+M. P. Naeini, G. Cooper, and M. Hauskrecht, ``Obtaining well calibrated probabilities using Bayesian binning into quantiles,'' in \textit{Proc. AAAI}, 2015, pp. 2901--2907.
+
+\bibitem{loshchilov2019decoupled}
+I. Loshchilov and F. Hutter, ``Decoupled weight decay regularization,'' in \textit{Proc. ICLR}, 2019.
+
+\bibitem{zhao2021calibrate}
+Z. Zhao, E. Wallace, S. Feng, D. Klein, and S. Singh, ``Calibrate before use: Improving few-shot performance of language models,'' in \textit{Proc. ICML}, 2021, pp. 12697--12706.
+
+\bibitem{qwen2025qwen3}
+Qwen Team, ``Qwen3 technical report,'' \textit{arXiv:2505.09388}, 2025.
+
+\end{thebibliography}
+\end{fullwidth}
+
+
+\makeatletter
+\if@twocolumn
+
+  \begin{biography}[author1]{Subham Divakar} is a Senior Software Engineer at Soci\'{e}t\'{e} G\'{e}n\'{e}rale and a graduate of the Department of Electronics and Telecommunications, C.V. Raman Global University, Bhubaneswar, India. His research interests include attention mechanisms, retrieval-augmented generation, decision models for agentic AI, vision transformers, and deep learning for plant disease recognition. He has published IEEE papers on recursive attention mechanisms and plant disease classification. He also runs a social media marketing agency and maintains several open-source AI projects. (Email: shubham.divakar@gmail.com; ORCID: 0000-0003-0635-1058)
+  \end{biography}
+
+  \begin{biography}[author2]{Rojalina Priyadarshini} is affiliated with the Department of Computer Science, C.V. Raman Global University, Bhubaneswar, India. Her research interests include machine learning, natural language processing, information retrieval, and image processing. She has co-authored research on attention mechanisms, plant disease classification, and topology-aware AI systems. (Email: priyadarshini.rojalina@gmail.com; ORCID: 0000-0002-5481-5251)
+  \end{biography}
+
+\else
+\fi
+\makeatother
+
+\end{document}

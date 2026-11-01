@@ -5,6 +5,19 @@ thresholds t, examples where Nano-Jev's top probability >= t keep its answer and
 use the LLM's answer. Reports accuracy vs the fraction escalated on each test set.
 
     python scripts/cascade.py --model runs/nano-jev-v1.0 --test-data data data_heldout
+
+Revision (all three decisions, clean-protocol model):
+    python scripts/cascade.py --model runs/v2/nanojev/seed0 --data data_clean \
+        --test-data data_clean data_heldout --decisions relevance sufficient grounded \
+        --out results/v2/cascade/seed0
+
+Also written: for every test set, the same sweep with uncalibrated Nano-Jev (tau = 1,
+threshold also re-chosen on calib) as "rows_raw" (temperature ablation), and
+cascade_preds.jsonl with both models' calibrated probabilities per example, so stats.py
+can run paired tests on any threshold.
+
+Latency: ms/decision = Nano-Jev batched ms/decision (all examples)
+                       + escalated fraction x LLM batched ms/decision, per decision type.
 """
 
 import argparse
@@ -20,6 +33,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from baselines import llm_logits  # noqa: E402
+from revision_utils import write_jsonl  # noqa: E402
 from nanojev import model as M  # noqa: E402
 from nanojev.calibration import fit_temperature  # noqa: E402
 from nanojev.report import by_decision, labels_of, read_jsonl  # noqa: E402
@@ -87,7 +101,7 @@ def main():
             lg, ms = timed(llm_logits, llm, ltok, t[dec])
             llm_lg[(name, dec)], llm_ms[(name, dec)] = lg, ms / len(t[dec])
 
-    report, lines = {}, [f"# Cascade: `{args.model}` → `{args.llm}`", ""]
+    report, lines, preds = {}, [f"# Cascade: `{args.model}` → `{args.llm}`", ""], []
     for dec in args.decisions:
         c_labels = labels_of(calib[dec])
         t_nano = fit_temperature(nano_logits[("calib", dec)], c_labels)
@@ -97,16 +111,29 @@ def main():
         calib_rows = sweep(prob(nano_logits[("calib", dec)], t_nano),
                            prob(llm_lg[("calib", dec)], t_llm), c_labels)
         chosen = pick_threshold(calib_rows)
-        report[f"{dec}@calib"] = {"chosen_threshold": chosen, "rows": calib_rows}
+        calib_rows_raw = sweep(prob(nano_logits[("calib", dec)], 1.0),
+                               prob(llm_lg[("calib", dec)], t_llm), c_labels)
+        chosen_raw = pick_threshold(calib_rows_raw)
+        report[f"{dec}@calib"] = {"chosen_threshold": chosen, "rows": calib_rows,
+                                  "chosen_threshold_raw": chosen_raw, "rows_raw": calib_rows_raw,
+                                  "t_nano": t_nano, "t_llm": t_llm}
 
         for name, t in tests.items():
             labels = labels_of(t[dec])
-            rows = sweep(prob(nano_logits[(name, dec)], t_nano), prob(llm_lg[(name, dec)], t_llm),
-                         labels)
-            for r in rows:
+            p_nano = prob(nano_logits[(name, dec)], t_nano)
+            p_llm = prob(llm_lg[(name, dec)], t_llm)
+            rows = sweep(p_nano, p_llm, labels)
+            rows_raw = sweep(prob(nano_logits[(name, dec)], 1.0), p_llm, labels)
+            for r in rows + rows_raw:
                 r["ms_per_decision"] = nano_ms[(name, dec)] + r["escalated"] * llm_ms[(name, dec)]
             report[f"{dec}@{name}"] = {"chosen_threshold": chosen, "rows": rows,
-                                       "nano_ms": nano_ms[(name, dec)], "llm_ms": llm_ms[(name, dec)]}
+                                       "chosen_threshold_raw": chosen_raw, "rows_raw": rows_raw,
+                                       "nano_ms": nano_ms[(name, dec)], "llm_ms": llm_ms[(name, dec)],
+                                       "n": len(labels)}
+            for i, ex in enumerate(t[dec]):
+                preds.append({"set": name, "decision": dec, "idx": i, "label": int(ex["label"]),
+                              "nano_probs": [round(float(x), 5) for x in p_nano[i]],
+                              "llm_probs": [round(float(x), 5) for x in p_llm[i]]})
             lines += [f"## {dec} on `{name}` (threshold chosen on calib: {chosen})", "",
                       "| accept Nano-Jev if confidence ≥ | escalated to LLM | accuracy | ms/decision |",
                       "|---|---|---|---|"]
@@ -122,6 +149,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     (out / "cascade.json").write_text(json.dumps(report, indent=2))
     (out / "cascade.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_jsonl(out / "cascade_preds.jsonl", preds)
     print("\n".join(lines))
 
     try:

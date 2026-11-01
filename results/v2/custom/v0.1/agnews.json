@@ -1,0 +1,48 @@
+{
+  "custom:agnews": {
+    "temperature": 2.9444351196289062,
+    "raw": {
+      "n": 1000,
+      "accuracy": 0.396,
+      "macro_f1": 0.3157111478392015,
+      "nll": 1.5390573740005493,
+      "brier": 0.7804458299261949,
+      "ece": 0.23500155276060106
+    },
+    "calibrated": {
+      "n": 1000,
+      "accuracy": 0.396,
+      "macro_f1": 0.3157111478392015,
+      "nll": 1.3185606002807617,
+      "brier": 0.7093158595386568,
+      "ece": 0.030086487293243425
+    },
+    "ms_per_decision": 2.584402084350586,
+    "per_class": {
+      "world news": {
+        "precision": 0.5,
+        "recall": 0.072,
+        "f1": 0.1258741258741259,
+        "support": 250
+      },
+      "sports": {
+        "precision": 0.9432624113475178,
+        "recall": 0.532,
+        "f1": 0.680306905370844,
+        "support": 250
+      },
+      "business": {
+        "precision": 0.2976913730255164,
+        "recall": 0.98,
+        "f1": 0.45666356011183595,
+        "support": 250
+      },
+      "science and technology": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 250
+      }
+    }
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "custom:yahoo": {
+    "temperature": 20.08553695678711,
+    "raw": {
+      "n": 1000,
+      "accuracy": 0.056,
+      "macro_f1": 0.030725809905243394,
+      "nll": 2.620187997817993,
+      "brier": 0.9524551320566402,
+      "ece": 0.10087324870377778
+    },
+    "calibrated": {
+      "n": 1000,
+      "accuracy": 0.056,
+      "macro_f1": 0.030725809905243394,
+      "nll": 2.3136255741119385,
+      "brier": 0.9021955717736803,
+      "ece": 0.0466882603764534
+    },
+    "ms_per_decision": 50.33564329147339,
+    "per_class": {
+      "society and culture": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 100
+      },
+      "science and mathematics": {
+        "precision": 0.058823529411764705,
+        "recall": 0.01,
+        "f1": 0.017094017094017096,
+        "support": 100
+      },
+      "health": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 100
+      },
+      "education and reference": {
+        "precision": 0.0787037037037037,
+        "recall": 0.34,
+        "f1": 0.12781954887218044,
+        "support": 100
+      },
+      "computers and internet": {
+        "precision": 0.016129032258064516,
+        "recall": 0.05,
+        "f1": 0.024390243902439025,
+        "support": 100
+      },
+      "sports": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 100
+      },
+      "business and finance": {
+        "precision": 0.08333333333333333,
+        "recall": 0.01,
+        "f1": 0.017857142857142856,
+        "support": 100
+      },
+      "entertainment and music": {
+        "precision": 0.045454545454545456,
+        "recall": 0.01,
+        "f1": 0.01639344262295082,
+        "support": 100
+      },
+      "family and relationships": {
+        "precision": 0.08235294117647059,
+        "recall": 0.14,
+        "f1": 0.1037037037037037,
+        "support": 100
+      },
+      "politics and government": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 100
+      }
+    }
+  }
+}

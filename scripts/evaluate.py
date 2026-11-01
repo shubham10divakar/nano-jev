@@ -7,6 +7,10 @@
 
 Temperatures are always fitted on <data>/calib.jsonl. --test-data evaluates them unchanged
 on another test set (out-of-distribution protocol).
+
+Alongside <name>.json/.md it writes <name>_preds.jsonl (per-example logits and calibrated
+probabilities; see scripts/revision_utils.py) used by stats.py, cascade and make_tables.py.
+<name>.json also carries per-class precision/recall/F1 (same run as the main metrics).
 """
 
 import argparse
@@ -18,9 +22,12 @@ from pathlib import Path
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from nanojev import model as M  # noqa: E402
 from nanojev.report import (by_decision, decision_report, labels_of, read_jsonl,  # noqa: E402
                             render_table)
+from revision_utils import per_class, pred_rows, write_jsonl  # noqa: E402
+
 
 
 def main():
@@ -40,7 +47,7 @@ def main():
     calib = by_decision(read_jsonl(Path(args.data) / "calib.jsonl"))
     test = by_decision(read_jsonl(Path(args.test_data or args.data) / "test.jsonl"))
 
-    report = {}
+    report, preds = {}, []
     for dec in sorted(test):
         c_logits = torch.stack(M.score(model, tok, calib[dec], args.max_length, device))
         t0 = time.time()
@@ -48,6 +55,9 @@ def main():
         ms = 1000 * (time.time() - t0) / len(test[dec])
         report[dec] = decision_report(c_logits, labels_of(calib[dec]),
                                       t_logits, labels_of(test[dec]), ms)
+        report[dec]["per_class"] = per_class(t_logits, labels_of(test[dec]),
+                                             test[dec][0]["options"], report[dec]["temperature"])
+        preds += pred_rows(dec, test[dec], t_logits, report[dec]["temperature"])
 
     table = render_table(f"Nano-Jev — `{args.model}` on `{args.test_data or args.data}`", report)
     print(table)
@@ -63,6 +73,7 @@ def main():
         results_dir.mkdir(parents=True, exist_ok=True)
         (results_dir / f"{args.name}.json").write_text(json.dumps(report, indent=2))
         (results_dir / f"{args.name}.md").write_text(table + "\n", encoding="utf-8")
+        write_jsonl(results_dir / f"{args.name}_preds.jsonl", preds)
         print(f"saved {args.name}.json/.md to {results_dir}")
 
 

@@ -1,0 +1,17 @@
+\begin{tabular}{llrrrr}
+\toprule
+\textbf{Source} & \textbf{Decision} & \textbf{Train} & \textbf{Dev} & \textbf{Calib} & \textbf{Test} \\
+\midrule
+HotpotQA & relevance & 22,648 & 1,192 & 1,988 & 1,984 \\
+HotpotQA & sufficient & 11,324 & 596 & 994 & 992 \\
+SQuAD~2.0 & sufficient & 5,700 & 300 & 500 & 500 \\
+MultiNLI & grounded & 7,600 & 400 & 500 & 500 \\
+\midrule
+\textbf{Total} & & 47,272 & 2,488 & 3,982 & 3,976 \\
+\midrule
+MuSiQue (held-out) & relevance & --- & --- & --- & 4,655 \\
+MuSiQue (held-out) & sufficient & --- & --- & --- & 1,040 \\
+VitaminC (held-out) & grounded & --- & --- & --- & 1,000 \\
+LLM-AggreFact (held-out) & grounded & --- & --- & --- & \ph{--} \\
+\bottomrule
+\end{tabular}

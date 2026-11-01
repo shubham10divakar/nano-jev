@@ -1,0 +1,14 @@
+\begin{tabular}{lcccccccc}
+\toprule
+& & \multicolumn{3}{c}{\textbf{Test accuracy}} & \multicolumn{3}{c}{\textbf{Held-out accuracy}} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}
+\textbf{System} & \textbf{Params} & rel. & suf. & grd. & rel. & suf. & grd. \\
+\midrule
+BGE-reranker-v2-m3$^\dagger$ & 568\,M & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} \\
+Qwen3-4B-Instruct$^\dagger$ & 4\,B & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} \\
+\midrule
+CaliDec v0.1 & 22.7\,M & 0.798 & 0.759 & 0.804 & 0.631 & 0.680 & 0.672 \\
+1-pass classifier & 33.4\,M & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} \\
+\textbf{CaliDec (K-pass)} & 33.4\,M & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} & \ph{--} \\
+\bottomrule
+\end{tabular}

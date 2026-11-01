@@ -31,6 +31,9 @@ from nanojev.report import (by_decision, decision_report, labels_of, read_jsonl,
                             render_table, save)
 from nanojev.schema import subject_of  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from revision_utils import pred_rows, write_jsonl  # noqa: E402
+
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # What each option means, spelled out for the zero-shot LLM.
@@ -67,7 +70,7 @@ def reranker_scores(model, tok, examples, max_length=512, batch_size=32) -> np.n
 def run_reranker(name, calib, test) -> dict:
     tok = AutoTokenizer.from_pretrained(name)
     model = AutoModelForSequenceClassification.from_pretrained(name).to(DEVICE).eval()
-    report = {}
+    report, preds = {}, []
     for dec in sorted(test):
         c = reranker_scores(model, tok, calib[dec])
         t0 = time.time()
@@ -78,9 +81,10 @@ def run_reranker(name, calib, test) -> dict:
                                                           1e-12, None)), dtype=torch.float32)
         report[dec] = decision_report(to_logits(c), labels_of(calib[dec]),
                                       to_logits(t), labels_of(test[dec]), ms)
+        preds += pred_rows(dec, test[dec], to_logits(t), report[dec]["temperature"])
     del model
     free_gpu()
-    return report
+    return report, preds
 
 
 # ---------------------------------------------------------------- prompted LLM baseline
@@ -89,7 +93,8 @@ def llm_prompt(tok, ex, max_state_tokens: int) -> str:
     state_ids = tok(ex["state"], add_special_tokens=False)["input_ids"][:max_state_tokens]
     state = tok.decode(state_ids)
     letters = [chr(65 + i) for i in range(len(ex["options"]))]
-    options = "\n".join(f"{l}. {o}" for l, o in zip(letters, OPTION_TEXT[ex["decision"]]))
+    option_text = OPTION_TEXT.get(ex["decision"], ex["options"])  # custom sets: the raw labels
+    options = "\n".join(f"{l}. {o}" for l, o in zip(letters, option_text))
     content = (
         "You are a precise judge inside a retrieval-augmented question answering system.\n\n"
         f"{ex['question']}\n\n<context>\n{state}\n</context>\n\n"
@@ -119,17 +124,18 @@ def run_llm(name, calib, test) -> dict:
     tok = AutoTokenizer.from_pretrained(name, padding_side="left")
     model = AutoModelForCausalLM.from_pretrained(
         name, dtype=torch.bfloat16, device_map=DEVICE, low_cpu_mem_usage=True).eval()  # straight to GPU: avoids a ~8 GB RAM peak
-    report = {}
+    report, preds = {}, []
     for dec in sorted(test):
         c = llm_logits(model, tok, calib[dec])
         t0 = time.time()
         t = llm_logits(model, tok, test[dec])
         ms = 1000 * (time.time() - t0) / len(test[dec])
         report[dec] = decision_report(c, labels_of(calib[dec]), t, labels_of(test[dec]), ms)
+        preds += pred_rows(dec, test[dec], t, report[dec]["temperature"])
         print(f"  {dec}: acc {report[dec]['calibrated']['accuracy']:.3f}", flush=True)
     del model
     free_gpu()
-    return report
+    return report, preds
 
 
 def main():
@@ -158,13 +164,14 @@ def main():
 
     for kind, name, fn in runs:
         print(f"== {kind}: {name}", flush=True)
-        report = fn(name, calib, test)
+        report, preds = fn(name, calib, test)
         where = f" on `{args.test_data}` (fitted on `{args.data}` calib)" if args.test_data else ""
         table = render_table(f"{kind} baseline — `{name}`{where}", report)
         print(table, flush=True)
         if not args.limit:
             save(report, Path(args.out) / f"{kind}{args.suffix}.json")
             (Path(args.out) / f"{kind}{args.suffix}.md").write_text(table + "\n", encoding="utf-8")
+            write_jsonl(Path(args.out) / f"{kind}{args.suffix}_preds.jsonl", preds)
 
 
 if __name__ == "__main__":

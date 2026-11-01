@@ -1,0 +1,84 @@
+{
+  "custom:yahoo": {
+    "temperature": 1.4017788171768188,
+    "raw": {
+      "n": 1000,
+      "accuracy": 0.239,
+      "macro_f1": 0.20497922249330341,
+      "nll": 2.1088647842407227,
+      "brier": 0.8520268019205219,
+      "ece": 0.1783163916170597
+    },
+    "calibrated": {
+      "n": 1000,
+      "accuracy": 0.239,
+      "macro_f1": 0.20497922249330341,
+      "nll": 2.064032554626465,
+      "brier": 0.831931200379311,
+      "ece": 0.1265901311188936
+    },
+    "ms_per_decision": 29.7248854637146,
+    "per_class": {
+      "society and culture": {
+        "precision": 0.3,
+        "recall": 0.03,
+        "f1": 0.05454545454545454,
+        "support": 100
+      },
+      "science and mathematics": {
+        "precision": 0.7142857142857143,
+        "recall": 0.05,
+        "f1": 0.09345794392523364,
+        "support": 100
+      },
+      "health": {
+        "precision": 0.12755102040816327,
+        "recall": 1.0,
+        "f1": 0.22624434389140272,
+        "support": 100
+      },
+      "education and reference": {
+        "precision": 0.5789473684210527,
+        "recall": 0.11,
+        "f1": 0.18487394957983194,
+        "support": 100
+      },
+      "computers and internet": {
+        "precision": 1.0,
+        "recall": 0.08,
+        "f1": 0.14814814814814814,
+        "support": 100
+      },
+      "sports": {
+        "precision": 0.6491228070175439,
+        "recall": 0.74,
+        "f1": 0.6915887850467289,
+        "support": 100
+      },
+      "business and finance": {
+        "precision": 0.8571428571428571,
+        "recall": 0.06,
+        "f1": 0.11214953271028037,
+        "support": 100
+      },
+      "entertainment and music": {
+        "precision": 0.8333333333333334,
+        "recall": 0.05,
+        "f1": 0.09433962264150944,
+        "support": 100
+      },
+      "family and relationships": {
+        "precision": 0.38461538461538464,
+        "recall": 0.1,
+        "f1": 0.15873015873015872,
+        "support": 100
+      },
+      "politics and government": {
+        "precision": 0.8947368421052632,
+        "recall": 0.17,
+        "f1": 0.2857142857142857,
+        "support": 100
+      }
+    }
+  }
+}
